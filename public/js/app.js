@@ -1911,7 +1911,8 @@
     el.inputWpTitle.value = '';
     el.inputWpNote.value = '';
     el.inputWpSearchAddr.value = '';
-    el.wpCoordPreview.textContent = 'Toạ độ: Mặc định lấy tâm bản đồ hiện tại';
+    el.wpCoordPreview.textContent = 'Toạ độ: Dán link Google Maps ở trên hoặc chấm trên bản đồ';
+    el.wpCoordPreview.style.color = '';
     el.waypointModal.classList.remove('hidden');
   });
 
@@ -1933,40 +1934,73 @@
   el.btnWpUseMyLoc.addEventListener('click', () => {
     if (typeof state.myLat === 'number' && typeof state.myLng === 'number') {
       state.pickedWpCoords = { lat: state.myLat, lng: state.myLng };
-      el.wpCoordPreview.textContent = `Đã lấy vị trí hiện tại: ${state.myLat.toFixed(5)}, ${state.myLng.toFixed(5)}`;
+      el.wpCoordPreview.textContent = `✅ Đã lấy vị trí hiện tại: ${state.myLat.toFixed(5)}, ${state.myLng.toFixed(5)}`;
+      el.wpCoordPreview.style.color = '#059669';
     } else {
-      showToast('Chưa có vị trí GPS của bạn. Hãy chọn "Chấm trực tiếp trên bản đồ".');
+      showToast('Chưa có vị trí GPS của bạn. Hãy dán link Google Maps hoặc chọn "Chấm trên bản đồ".');
     }
   });
 
-  el.btnWpSearchAddr.addEventListener('click', async () => {
-    const q = el.inputWpSearchAddr.value.trim();
-    if (!q) return;
-    el.btnWpSearchAddr.textContent = 'Đang tìm...';
+  async function resolveGoogleMapsLinkInput(rawLink) {
+    const q = (rawLink || el.inputWpSearchAddr.value || '').trim();
+    if (!q) return false;
+    el.btnWpSearchAddr.textContent = 'Đang lấy...';
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`);
+      const res = await fetch(`/api/resolve-gmaps?url=${encodeURIComponent(q)}`);
       const data = await res.json();
-      if (data && data[0]) {
-        const lat = parseFloat(data[0].lat);
-        const lng = parseFloat(data[0].lon);
-        state.pickedWpCoords = { lat, lng };
-        map.setView([lat, lng], 16);
-        el.wpCoordPreview.textContent = `Đã ghim: ${data[0].display_name.slice(0, 62)}...`;
+      if (data && data.ok && typeof data.lat === 'number' && typeof data.lng === 'number') {
+        state.pickedWpCoords = { lat: data.lat, lng: data.lng };
+        map.setView([data.lat, data.lng], 17);
+        const placeLabel = data.placeName ? ` (${data.placeName.slice(0, 42)})` : '';
+        el.wpCoordPreview.textContent = `✅ Đã lấy toạ độ từ Google Maps: ${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}${placeLabel}`;
+        el.wpCoordPreview.style.color = '#059669';
+
+        // Auto-fill title if user hasn't typed one yet and Google Maps link contained place name
+        if (!el.inputWpTitle.value.trim() && data.placeName) {
+          const wpType = document.querySelector('input[name="wpType"]:checked')?.value || 'groom';
+          const prefix = getWaypointTypeLabel(wpType);
+          el.inputWpTitle.value = `${prefix} - ${data.placeName.slice(0, 40)}`;
+        }
+        return true;
       } else {
-        showToast('Không tìm thấy địa chỉ này, hãy dùng nút "Chấm trực tiếp trên bản đồ".');
+        el.wpCoordPreview.textContent = `⚠️ ${(data && data.message) || 'Không đọc được toạ độ từ link này.'}`;
+        el.wpCoordPreview.style.color = '#dc2626';
+        showToast((data && data.message) || 'Không tìm thấy toạ độ trong link Google Maps này.');
+        return false;
       }
     } catch (err) {
-      showToast('Lỗi tìm địa chỉ. Hãy dùng nút "Chấm trực tiếp trên bản đồ".');
+      showToast('Lỗi khi đọc link Google Maps. Hãy kiểm tra lại đường link.');
+      return false;
     } finally {
-      el.btnWpSearchAddr.textContent = 'Tìm kiếm';
+      el.btnWpSearchAddr.textContent = 'Lấy toạ độ';
     }
+  }
+
+  el.btnWpSearchAddr.addEventListener('click', () => {
+    resolveGoogleMapsLinkInput();
   });
 
-  el.waypointForm.addEventListener('submit', (e) => {
+  // Automatically resolve as soon as user pastes a Google Maps link!
+  el.inputWpSearchAddr.addEventListener('paste', () => {
+    setTimeout(() => {
+      if (el.inputWpSearchAddr.value.trim()) {
+        resolveGoogleMapsLinkInput(el.inputWpSearchAddr.value);
+      }
+    }, 60);
+  });
+
+  el.waypointForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const type = document.querySelector('input[name="wpType"]:checked')?.value || 'groom';
     const title = el.inputWpTitle.value.trim();
     const note = el.inputWpNote.value.trim();
+
+    // If user pasted a Google Maps link and hit Submit directly without clicking "Lấy toạ độ" first
+    if (!state.pickedWpCoords && el.inputWpSearchAddr.value.trim()) {
+      const ok = await resolveGoogleMapsLinkInput(el.inputWpSearchAddr.value);
+      if (!ok) return;
+    }
+
     const coords = state.pickedWpCoords || map.getCenter();
 
     socket.emit('waypoint:add', {

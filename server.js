@@ -748,6 +748,147 @@ app.get('/api/room-check', (req, res) => {
   });
 });
 
+// Extract coordinates & optional place name from any Google Maps URL or raw text
+function extractCoordsFromGoogleMapsText(text) {
+  if (!text || typeof text !== 'string') return null;
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(text);
+    } catch (e) {
+      return text;
+    }
+  })();
+
+  let placeName = '';
+  const placeMatch = text.match(/\/maps\/place\/([^/@?&]+)/i);
+  if (placeMatch && placeMatch[1]) {
+    try {
+      const candidate = decodeURIComponent(placeMatch[1].replace(/\+/g, ' ')).trim();
+      if (!/^-?\d+\.\d+/.test(candidate)) {
+        placeName = candidate;
+      }
+    } catch (e) {}
+  }
+
+  const isValidLatLng = (lat, lng) =>
+    !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+
+  // 1. Exact Google Maps Pin (!3d<lat>!4d<lng>) - highest priority over viewport @lat,lng
+  const pin3d4d = [...text.matchAll(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/g)];
+  if (pin3d4d.length > 0) {
+    const last = pin3d4d[pin3d4d.length - 1];
+    const lat = parseFloat(last[1]);
+    const lng = parseFloat(last[2]);
+    if (isValidLatLng(lat, lng)) return { lat: roundCoord(lat), lng: roundCoord(lng), placeName };
+  }
+
+  // 2. Query parameters (?q=lat,lng | &ll=lat,lng | &destination=lat,lng | &center=lat,lng | &query=lat,lng)
+  const queryMatch = decoded.match(/[?&](?:q|query|ll|sll|center|destination|daddr|saddr|viewpoint)=\s*(-?\d+\.\d+)\s*[,\s+]\s*(-?\d+\.\d+)/i);
+  if (queryMatch) {
+    const lat = parseFloat(queryMatch[1]);
+    const lng = parseFloat(queryMatch[2]);
+    if (isValidLatLng(lat, lng)) return { lat: roundCoord(lat), lng: roundCoord(lng), placeName };
+  }
+
+  // 3. Path /place/lat,lng or /search/lat,lng or /dir/.../lat,lng
+  const pathCoordMatch = decoded.match(/\/(?:place|search|dir\/[^/]*)\/\s*(-?\d+\.\d+)\s*[,\s+]\s*(-?\d+\.\d+)/i);
+  if (pathCoordMatch) {
+    const lat = parseFloat(pathCoordMatch[1]);
+    const lng = parseFloat(pathCoordMatch[2]);
+    if (isValidLatLng(lat, lng)) return { lat: roundCoord(lat), lng: roundCoord(lng), placeName };
+  }
+
+  // 4. Viewport @lat,lng in Google Maps URL
+  const atMatch = decoded.match(/@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+  if (atMatch) {
+    const lat = parseFloat(atMatch[1]);
+    const lng = parseFloat(atMatch[2]);
+    if (isValidLatLng(lat, lng)) return { lat: roundCoord(lat), lng: roundCoord(lng), placeName };
+  }
+
+  // 5. Raw coordinates anywhere in text (e.g., "21.028511, 105.804817")
+  const rawMatch = decoded.match(/(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{2,3}\.\d{4,})/);
+  if (rawMatch) {
+    const lat = parseFloat(rawMatch[1]);
+    const lng = parseFloat(rawMatch[2]);
+    if (isValidLatLng(lat, lng)) return { lat: roundCoord(lat), lng: roundCoord(lng), placeName };
+  }
+
+  return null;
+}
+
+// Resolve full or shortened Google Maps links (maps.app.goo.gl / goo.gl/maps / google.com/maps)
+app.get('/api/resolve-gmaps', async (req, res) => {
+  const rawInput = String(req.query.url || '').trim();
+  if (!rawInput) {
+    return res.status(400).json({ ok: false, message: 'Vui lòng dán đường link Google Maps!' });
+  }
+
+  // Fast path: if coordinates are already directly inside the input string/URL
+  const direct = extractCoordsFromGoogleMapsText(rawInput);
+  if (direct) {
+    return res.json({ ok: true, ...direct });
+  }
+
+  // Extract http/https URL if user pasted a message containing text + URL from Zalo
+  const urlMatch = rawInput.match(/https?:\/\/[^\s"'<>]+/i);
+  const targetUrl = urlMatch ? urlMatch[0] : rawInput;
+
+  if (!/^https?:\/\//i.test(targetUrl)) {
+    return res.status(400).json({
+      ok: false,
+      message: 'Link không hợp lệ. Hãy dán link Google Maps (VD: https://maps.app.goo.gl/...)'
+    });
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 7000);
+    const response = await fetch(targetUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'vi-VN,vi;q=0.9,en;q=0.8'
+      }
+    });
+    clearTimeout(timeout);
+
+    const finalUrl = response.url || targetUrl;
+    const fromRedirectUrl = extractCoordsFromGoogleMapsText(finalUrl);
+    if (fromRedirectUrl) {
+      return res.json({ ok: true, ...fromRedirectUrl, resolvedUrl: finalUrl });
+    }
+
+    // Also inspect HTML body for embedded staticmap center or APP_INITIALIZATION_STATE coordinates
+    const html = (await response.text()).slice(0, 180000);
+    const fromHtml = extractCoordsFromGoogleMapsText(html);
+    if (fromHtml) {
+      return res.json({ ok: true, ...fromHtml, resolvedUrl: finalUrl });
+    }
+
+    const initStateMatch = html.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
+    if (initStateMatch) {
+      const lat = parseFloat(initStateMatch[1]);
+      const lng = parseFloat(initStateMatch[2]);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        return res.json({ ok: true, lat: roundCoord(lat), lng: roundCoord(lng), placeName: '' });
+      }
+    }
+
+    return res.status(422).json({
+      ok: false,
+      message: 'Không tìm thấy toạ độ trong link này. Bạn hãy mở điểm đó trên Google Maps rồi bấm Chia sẻ -> Sao chép đường liên kết.'
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      message: 'Không thể giải mã link rút gọn lúc này. Hãy thử lại hoặc bấm "Chấm trên bản đồ".'
+    });
+  }
+});
+
 // REST endpoint to get local network IPs so users can easily scan QR code on same Wi-Fi or internet
 app.get('/api/server-info', (req, res) => {
   const interfaces = os.networkInterfaces();
