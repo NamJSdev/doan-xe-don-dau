@@ -1,5 +1,7 @@
 # 💒 Ứng Dụng Định Vị & Bám Đoàn Xe Đón Dâu (Android & iPhone PWA)
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/NamJSdev/doan-xe-don-dau)
+
 Giải pháp định vị trực tiếp thời gian thực cho đoàn xe ngày cưới, giúp các xe bám sát **Xe Hoa / Xe Dẫn Đoàn** mà không sợ lạc đường hay rẽ nhầm ngõ.
 
 ## ✨ Các tính năng chính
