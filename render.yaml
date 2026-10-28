@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: doan-xe-don-dau
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health

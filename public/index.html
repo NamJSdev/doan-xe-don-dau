@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#090d16" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Wedding Convoy" />
+  <title>Wedding Convoy Live — Định Vị & Bám Đoàn Xe Đón Dâu</title>
+
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <!-- Main Google Map Container -->
+  <div id="map"></div>
+
+  <!-- Top Mobile-First Bar: Single-line non-wrapping pills + Collapsible Vertical Dropdown -->
+  <header class="top-bar">
+    <!-- Left: Collapsible Room Capsule (Tap to expand vertical room & tools menu) -->
+    <div class="top-left-dropdown-wrap" id="topMenuWrap">
+      <button type="button" class="room-capsule" id="btnToggleTopMenu" title="Bấm để mở/đóng menu đoàn xe">
+        <span class="live-dot" id="connectionDot"></span>
+        <strong class="room-code-text" id="displayRoomCode">CHƯA VÀO PHÒNG</strong>
+        <span class="host-crown-badge hidden" id="hostCrownBadge" title="Bạn là Chủ phòng (Người mở phòng)">Chủ phòng</span>
+        <span class="vehicle-counter" id="vehicleCountBadge">0 xe</span>
+        <svg class="chevron-icon" id="topMenuChevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+
+      <!-- Collapsible Vertical Menu Drawer -->
+      <div class="top-vertical-menu hidden" id="topVerticalMenu">
+        <button type="button" class="vmenu-item" id="btnOpenShare">
+          <div class="vmenu-icon rose">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          </div>
+          <div class="vmenu-text">
+            <strong>Mã QR & Link Mời Đoàn</strong>
+            <small>Quét mã vào phòng nhanh</small>
+          </div>
+        </button>
+
+        <button type="button" class="vmenu-item" id="btnDemoMode">
+          <div class="vmenu-icon amber">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </div>
+          <div class="vmenu-text">
+            <strong id="demoBtnLabel">Chạy Thử Mô Phỏng</strong>
+            <small>Tạo đoàn 3 xe chạy mẫu</small>
+          </div>
+        </button>
+
+        <button type="button" class="vmenu-item" id="btnEditProfile">
+          <div class="vmenu-icon slate">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </div>
+          <div class="vmenu-text">
+            <strong>Cài Đặt Xe Của Tôi</strong>
+            <small>Đổi tên xe, biển số, vai trò</small>
+          </div>
+        </button>
+
+        <div class="vmenu-divider"></div>
+
+        <button type="button" class="vmenu-item" id="btnLeaveRoomMenu">
+          <div class="vmenu-icon orange">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </div>
+          <div class="vmenu-text">
+            <strong>Thoát Khỏi Phòng</strong>
+            <small>Ngừng định vị & rời đoàn</small>
+          </div>
+        </button>
+
+        <button type="button" class="vmenu-item danger-item hidden" id="btnDeleteRoomMenu">
+          <div class="vmenu-icon danger">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </div>
+          <div class="vmenu-text">
+            <strong>Xoá & Đóng Phòng Đoàn</strong>
+            <small>Giải tán toàn bộ phòng (Chủ phòng)</small>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Right: 1-Tap Lead Car Lock Button (Always clean single line) -->
+    <button type="button" class="action-pill primary-rose" id="btnQuickFollowLead" title="Khóa mục tiêu theo Xe Hoa dẫn đoàn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+      <span>Bám Xe Hoa</span>
+    </button>
+  </header>
+
+  <!-- Collapsible Automotive Telemetry Follow HUD Banner -->
+  <div class="follow-hud hidden" id="followHud">
+    <div class="follow-hud-main">
+      <!-- Speedometer Gauge Box -->
+      <div class="hud-speed-box" id="hudSpeedBox">
+        <span class="hud-speed-val" id="followTargetSpeed">0</span>
+        <span class="hud-speed-unit">KM/H</span>
+      </div>
+
+      <div class="follow-target-info" id="btnToggleHudCollapse" title="Chạm để thu gọn/mở rộng thanh điều khiển">
+        <div class="follow-badge-row">
+          <span class="follow-status-tag" id="followModeTag">ĐANG BÁM XE HOA</span>
+          <span class="metric-highlight" id="followDistanceText">Cách: -- m</span>
+        </div>
+        <h3 id="followTargetName">Xe Hoa Dẫn Đoàn</h3>
+        <div class="follow-metrics">
+          <span id="followEtaText">Đang đồng bộ lộ trình...</span>
+        </div>
+      </div>
+
+      <div class="follow-hud-actions">
+        <button type="button" class="btn-hud-collapse" id="btnCollapseHudIcon" title="Thu gọn/Xổ ra tùy chọn bám xe">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+        </button>
+        <button type="button" class="btn-stop-follow" id="btnStopFollow" title="Ngừng bám mục tiêu">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Collapsible Controls Drawer inside Follow HUD -->
+    <div class="follow-controls-row" id="followControlsDrawer">
+      <div class="camera-mode-group">
+        <button type="button" class="cam-btn active" data-cam="target" id="camBtnTarget">Khóa xe</button>
+        <button type="button" class="cam-btn" data-cam="both" id="camBtnBoth">2 xe</button>
+        <button type="button" class="cam-btn" data-cam="free" id="camBtnFree">Tự do</button>
+      </div>
+      <div class="trail-toggles">
+        <label class="mini-toggle">
+          <input type="checkbox" id="chkShowTrail" checked />
+          <span class="toggle-pill-ui">Vệt đi</span>
+        </label>
+        <label class="mini-toggle">
+          <input type="checkbox" id="chkShowRoute" checked />
+          <span class="toggle-pill-ui">Chỉ đường</span>
+        </label>
+        <a class="btn-hud-gmaps" id="btnOpenFollowGmaps" href="#" target="_blank" rel="noopener" title="Mở Google Maps">
+          <span>G.Maps ↗</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Map Pick Mode Banner -->
+  <div class="map-pick-banner hidden" id="mapPickBanner">
+    <div class="pick-banner-text">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      <span>Chạm lên bản đồ để chọn vị trí <strong>Điểm Đám Cưới</strong></span>
+    </div>
+    <button type="button" id="btnCancelPickMap">Huỷ</button>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Right Floating Vertical Map Control Pod (Collapsible!) -->
+  <div class="map-fab-pod" id="mapFabPod">
+    <button type="button" class="fab-toggle-btn" id="btnToggleFabPod" title="Thu gọn / Xổ dọc công cụ bản đồ">
+      <svg class="fab-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+
+    <div class="fab-items-list" id="fabItemsList">
+      <button type="button" class="fab-btn" id="btnLocateMe" title="Về vị trí xe của tôi">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/><circle cx="12" cy="12" r="8"/></svg>
+      </button>
+      <button type="button" class="fab-btn" id="btnFitAll" title="Thu phóng toàn cảnh đoàn xe">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+      </button>
+      <button type="button" class="fab-btn active" id="btnToggleTraffic" title="Bật/Tắt Giao thông trực tiếp Google Maps">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="3"/><circle cx="12" cy="7" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="17" r="1.5"/></svg>
+      </button>
+      <button type="button" class="fab-btn" id="btnToggleMapStyle" title="Đổi Bản đồ Đường phố / Vệ tinh Google">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+      </button>
+      <button type="button" class="fab-btn" id="btnShowAllTrails" title="Bật/tắt vệt đường của mọi xe">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17c3-6 6-6 9 0s6 6 9 0"/><path d="M3 7c3-6 6-6 9 0s6 6 9 0"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Left Collapsible Quick Driver Signal Pod (Cuộn gọn vào / Xổ dọc ra!) -->
+  <div class="quick-ping-pod" id="quickPingPod">
+    <button type="button" class="ping-trigger-btn" id="btnTogglePingPod" title="Báo hiệu nhanh cho đoàn xe">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>Báo hiệu</span>
+    </button>
+
+    <div class="quick-ping-vertical-list hidden" id="quickPingBar">
+      <button type="button" class="ping-chip" data-msg="Đang chờ đèn đỏ, đoàn đi chậm nhé!">
+        <span class="ping-dot red"></span>
+        <span>Chờ đèn đỏ</span>
+      </button>
+      <button type="button" class="ping-chip" data-msg="Chú ý rẽ ở ngã rẽ này nhé!">
+        <span class="ping-dot blue"></span>
+        <span>Chú ý ngã rẽ</span>
+      </button>
+      <button type="button" class="ping-chip" data-msg="Xin đi chậm đợi xe tôi với!">
+        <span class="ping-dot amber"></span>
+        <span>Đợi xe sau</span>
+      </button>
+      <button type="button" class="ping-chip" data-msg="Đang bám sát lộ trình đoàn!">
+        <span class="ping-dot green"></span>
+        <span>Đang bám sát</span>
+      </button>
+      <button type="button" class="ping-chip" data-msg="Đoạn này đông xe, giữ khoảng cách!">
+        <span class="ping-dot purple"></span>
+        <span>Đường đông</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Bottom Sheet Panel: Vehicles & Waypoints -->
+  <section class="bottom-sheet" id="bottomSheet">
+    <div class="sheet-handle-area" id="sheetToggleHandle">
+      <div class="sheet-grabber"></div>
+    </div>
+
+    <div class="sheet-header-bar">
+      <div class="sheet-segmented-tabs">
+        <button type="button" class="sheet-tab active" data-tab="vehicles">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12.42V16h2"/><circle cx="6.5" cy="16.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg>
+          <span>Đoàn Xe</span>
+          <span class="tab-badge" id="tabVehicleCount">0</span>
+        </button>
+        <button type="button" class="sheet-tab" data-tab="waypoints">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <span>Điểm Cưới</span>
+          <span class="tab-badge" id="tabWaypointCount">0</span>
+        </button>
+      </div>
+
+      <button type="button" class="sheet-expand-btn" id="btnToggleSheetSize">Thu gọn</button>
+    </div>
+
+    <!-- Tab 1: Vehicle List -->
+    <div class="tab-content active" id="tabContentVehicles">
+      <div class="vehicle-cards-list" id="vehicleListContainer">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+
+    <!-- Tab 2: Fixed Wedding Waypoints -->
+    <div class="tab-content hidden" id="tabContentWaypoints">
+      <div class="waypoints-toolbar">
+        <button type="button" class="btn-add-waypoint" id="btnAddWaypointModal">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span>Thêm Điểm Đón Dâu (Nhà Trai / Nhà Gái)</span>
+        </button>
+      </div>
+      <div class="waypoint-cards-list" id="waypointListContainer">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </section>
+
+  <!-- Modal 1: Onboarding (Create Room vs Join Room) / Edit Vehicle Setup -->
+  <div class="modal-backdrop" id="setupModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="brand-emblem">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+        </div>
+        <div class="modal-title-group">
+          <span class="modal-eyebrow" id="setupModalEyebrow">HỆ THỐNG ĐỊNH VỊ ĐOÀN ĐÓN DÂU</span>
+          <h2 id="setupModalTitle">Mở Phòng Hoặc Vào Đoàn Xe</h2>
+          <p id="setupModalSubtitle">Trưởng đoàn mở phòng trước — các xe khác nhập mã để vào bản đồ</p>
+        </div>
+        <button type="button" class="modal-close-x hidden" id="btnCloseSetupModal" title="Đóng">✕</button>
+      </div>
+
+      <!-- 2-Mode Switcher: 1. Nhập Mã Vào Phòng | 2. Tạo Phòng Mới -->
+      <div class="room-mode-tabs" id="roomModeTabs">
+        <button type="button" class="room-mode-tab active" data-mode="join" id="tabModeJoin">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          <span>1. Nhập Mã Vào Phòng</span>
+        </button>
+        <button type="button" class="room-mode-tab" data-mode="create" id="tabModeCreate">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          <span>2. Tạo Phòng Mới</span>
+        </button>
+      </div>
+
+      <!-- Error / Warning Banner inside Modal -->
+      <div class="room-modal-alert hidden" id="roomModalError"></div>
+
+      <form id="setupForm">
+        <div class="form-group" id="roomCodeFormGroup">
+          <label id="roomCodeLabel">Nhập Mã Phòng Đoàn Xe (Do người mở phòng cung cấp)</label>
+          <div class="room-code-input-row">
+            <input type="text" id="inputRoomCode" class="mono-input" placeholder="VD: DAM-CUOI" value="DAM-CUOI" required />
+            <button type="button" class="btn-random-code hidden" id="btnRandomRoomCode" title="Tạo mã phòng ngẫu nhiên">Tạo mã</button>
+          </div>
+          <small class="room-mode-hint" id="roomModeHint">Phòng phải được Trưởng đoàn mở trước thì các xe mới vào được.</small>
+        </div>
+
+        <div class="form-group">
+          <label>Chọn vai trò xe trong đoàn</label>
+          <div class="role-selector">
+            <label class="role-option">
+              <input type="radio" name="vehicleRole" value="lead" />
+              <div class="role-box">
+                <div class="role-icon-circle rose">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+                </div>
+                <strong>Xe Hoa</strong>
+                <small>Dẫn đầu đoàn</small>
+              </div>
+            </label>
+            <label class="role-option">
+              <input type="radio" name="vehicleRole" value="convoy" checked />
+              <div class="role-box">
+                <div class="role-icon-circle blue">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12.42V16h2"/><circle cx="6.5" cy="16.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg>
+                </div>
+                <strong>Xe Đoàn</strong>
+                <small>Bám theo đoàn</small>
+              </div>
+            </label>
+            <label class="role-option">
+              <input type="radio" name="vehicleRole" value="media" />
+              <div class="role-box">
+                <div class="role-icon-circle purple">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                </div>
+                <strong>Quay Chụp</strong>
+                <small>Media / Hậu cần</small>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>Tên hiển thị của xe</label>
+            <input type="text" id="inputVehicleName" placeholder="VD: Xe số 2 - Bác Tuấn" required />
+          </div>
+          <div class="form-group flex-1">
+            <label>Biển số</label>
+            <input type="text" id="inputVehiclePlate" class="mono-input" placeholder="30K-888.88" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Màu vệt lộ trình trên bản đồ</label>
+          <div class="color-picker-row" id="colorPickerRow">
+            <button type="button" class="color-swatch selected" data-color="#e11d48" style="background:#e11d48"></button>
+            <button type="button" class="color-swatch" data-color="#2563eb" style="background:#2563eb"></button>
+            <button type="button" class="color-swatch" data-color="#059669" style="background:#059669"></button>
+            <button type="button" class="color-swatch" data-color="#d97706" style="background:#d97706"></button>
+            <button type="button" class="color-swatch" data-color="#7c3aed" style="background:#7c3aed"></button>
+            <button type="button" class="color-swatch" data-color="#0891b2" style="background:#0891b2"></button>
+          </div>
+        </div>
+
+        <div class="modal-actions-stack">
+          <button type="submit" class="btn-submit-main" id="btnSubmitSetup">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+            <span id="btnSubmitSetupText">Vào Phòng Đoàn Xe</span>
+          </button>
+          <div class="secondary-modal-btns">
+            <button type="button" class="btn-outline" id="btnViewOnlyMode">
+              Chỉ xem bản đồ
+            </button>
+            <button type="button" class="btn-outline danger hidden" id="btnClearMyTrail">
+              Xoá vệt đường cũ
+            </button>
+            <button type="button" class="btn-outline danger hidden" id="btnLeaveRoomModal">
+              Thoát phòng
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 2: Add Fixed Wedding Waypoint -->
+  <div class="modal-backdrop hidden" id="waypointModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="brand-emblem blue">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        </div>
+        <div class="modal-title-group">
+          <span class="modal-eyebrow">ĐIỂM ĐẾN CHUNG CỦA ĐOÀN</span>
+          <h2>Ghim Địa Điểm Đám Cưới</h2>
+          <p>Đồng bộ tức thì lên bản đồ của tất cả các xe</p>
+        </div>
+      </div>
+
+      <form id="waypointForm">
+        <div class="form-group">
+          <label>Phân loại điểm hẹn</label>
+          <div class="wp-type-grid">
+            <label class="wp-type-item">
+              <input type="radio" name="wpType" value="groom" checked />
+              <span>Nhà Trai</span>
+            </label>
+            <label class="wp-type-item">
+              <input type="radio" name="wpType" value="bride" />
+              <span>Nhà Gái</span>
+            </label>
+            <label class="wp-type-item">
+              <input type="radio" name="wpType" value="restaurant" />
+              <span>Nhà Hàng Tiệc</span>
+            </label>
+            <label class="wp-type-item">
+              <input type="radio" name="wpType" value="meetup" />
+              <span>Điểm Tập Kết</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Tên địa điểm hiển thị</label>
+          <input type="text" id="inputWpTitle" placeholder="VD: Nhà Gái - Khu đô thị Ciputra" required />
+        </div>
+
+        <div class="form-group">
+          <label>Hướng dẫn đỗ xe / Giờ tập trung</label>
+          <input type="text" id="inputWpNote" placeholder="VD: Đỗ xe dọc trục đường đôi trước cổng" />
+        </div>
+
+        <div class="form-group">
+          <label>Thiết lập toạ độ</label>
+          <div class="coord-methods">
+            <button type="button" class="btn-outline" id="btnWpPickOnMap">Chấm trên bản đồ</button>
+            <button type="button" class="btn-outline" id="btnWpUseMyLoc">Vị trí của tôi</button>
+          </div>
+          <div class="search-address-row">
+            <input type="text" id="inputWpSearchAddr" placeholder="Tìm theo tên đường / địa chỉ..." />
+            <button type="button" id="btnWpSearchAddr">Tìm</button>
+          </div>
+          <small class="coord-preview" id="wpCoordPreview">Toạ độ: Mặc định lấy tâm bản đồ hiện tại</small>
+        </div>
+
+        <div class="modal-footer-btns">
+          <button type="button" class="btn-outline" id="btnCloseWaypointModal">Huỷ</button>
+          <button type="submit" class="btn-submit-main">Lưu Điểm Hẹn</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 3: Share QR Code & Link -->
+  <div class="modal-backdrop hidden" id="shareModal">
+    <div class="modal-card share-card">
+      <div class="modal-header">
+        <div class="brand-emblem">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        </div>
+        <div class="modal-title-group">
+          <span class="modal-eyebrow">KẾT NỐI ĐOÀN XE NHANH</span>
+          <h2>Mã QR Tham Gia Đoàn</h2>
+          <p>Quét mã bằng Camera hoặc Zalo để vào bản đồ đoàn xe</p>
+        </div>
+      </div>
+
+      <div class="qr-box">
+        <img id="qrImage" src="" alt="QR Code Đoàn Xe" />
+        <div class="room-code-large" id="shareRoomCodeText">DAM-CUOI</div>
+      </div>
+
+      <div class="share-url-group">
+        <input type="text" id="shareUrlInput" readonly />
+        <button type="button" id="btnCopyShareUrl">Sao chép</button>
+      </div>
+
+      <div class="lan-hint" id="lanIpHint"></div>
+
+      <div class="modal-footer-btns">
+        <button type="button" class="btn-submit-main" id="btnCloseShareModal">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
