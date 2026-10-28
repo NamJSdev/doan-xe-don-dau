@@ -1193,8 +1193,9 @@ io.on('connection', (socket) => {
     if (!room || !room.vehicles[data.id]) return;
 
     const v = room.vehicles[data.id];
+    const now = Date.now();
     v.statusMsg = String(data.statusMsg || '').trim().slice(0, 90);
-    v.statusTime = Date.now();
+    v.statusTime = now;
 
     io.to(currentRoomCode).emit('vehicle:status-broadcast', {
       id: v.id,
@@ -1203,6 +1204,14 @@ io.on('connection', (socket) => {
       statusMsg: v.statusMsg,
       statusTime: v.statusTime
     });
+
+    // Automatically clear transient status message after 7 seconds so it never hangs on car head
+    setTimeout(() => {
+      if (v.statusTime === now) {
+        v.statusMsg = '';
+        v.statusTime = null;
+      }
+    }, 7000);
   });
 
   // Clear breadcrumb trail of a vehicle (useful when starting return trip from Bride's house)

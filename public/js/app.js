@@ -415,8 +415,40 @@
   }
 
   // ==================== 60FPS SMOOTH MARKERS & INCREMENTAL TRAILS ====================
+  const STATUS_BUBBLE_TTL_MS = 7000; // Auto-hide driver status bubble after 7 seconds
   const markerAnimFrames = {};
   const markerCumulativeRot = {};
+  const statusExpireTimers = {};
+
+  function scheduleStatusBubbleExpiry(vehicleId) {
+    if (statusExpireTimers[vehicleId]) {
+      clearTimeout(statusExpireTimers[vehicleId]);
+      delete statusExpireTimers[vehicleId];
+    }
+    const v = state.vehicles[vehicleId];
+    if (!v || !v.statusMsg || !v.statusTime) return;
+
+    const remainingMs = STATUS_BUBBLE_TTL_MS - (Date.now() - v.statusTime);
+    if (remainingMs <= 0) {
+      v.statusMsg = '';
+      v.statusTime = null;
+      return;
+    }
+
+    statusExpireTimers[vehicleId] = setTimeout(() => {
+      delete statusExpireTimers[vehicleId];
+      const car = state.vehicles[vehicleId];
+      if (!car) return;
+      car.statusMsg = '';
+      car.statusTime = null;
+      const marker = vehicleMarkers[vehicleId];
+      if (marker && marker.getElement()) {
+        const bubble = marker.getElement().querySelector('.marker-status-bubble');
+        if (bubble) bubble.classList.add('hidden');
+      }
+      renderVehicleCardsList();
+    }, remainingMs);
+  }
 
   function escapeHtml(str) {
     if (!str) return '';
@@ -444,7 +476,8 @@
     const displayName = isMe ? `${v.name} (Bạn)` : v.name;
 
     const cleanStatus = v.statusMsg ? v.statusMsg.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, '') : '';
-    const hasFreshStatus = cleanStatus && v.statusTime && (Date.now() - v.statusTime < 180000);
+    const hasFreshStatus = cleanStatus && v.statusTime && (Date.now() - v.statusTime < STATUS_BUBBLE_TTL_MS);
+    if (hasFreshStatus) scheduleStatusBubbleExpiry(v.id);
     const statusBubbleHtml = hasFreshStatus
       ? `<div class="marker-status-bubble">${escapeHtml(cleanStatus)}</div>`
       : `<div class="marker-status-bubble hidden"></div>`;
@@ -565,11 +598,15 @@
 
         const bubble = domEl.querySelector('.marker-status-bubble');
         if (bubble) {
-          const cleanStatus = v.statusMsg ? v.statusMsg.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, '') : '';
-          const hasFreshStatus = cleanStatus && v.statusTime && (Date.now() - v.statusTime < 180000);
+          const cleanStatus =
+          v.statusMsg && v.statusTime && Date.now() - v.statusTime < STATUS_BUBBLE_TTL_MS
+            ? v.statusMsg.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, '')
+            : '';
+          const hasFreshStatus = cleanStatus && v.statusTime && (Date.now() - v.statusTime < STATUS_BUBBLE_TTL_MS);
           if (hasFreshStatus) {
             bubble.textContent = cleanStatus;
             bubble.classList.remove('hidden');
+            scheduleStatusBubbleExpiry(v.id);
           } else {
             bubble.classList.add('hidden');
           }
@@ -1016,7 +1053,10 @@
           distStr = `Lộ trình: ${v.trail ? v.trail.length : 1} điểm mốc`;
         }
 
-        const cleanStatus = v.statusMsg ? v.statusMsg.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, '') : '';
+        const cleanStatus =
+          v.statusMsg && v.statusTime && Date.now() - v.statusTime < STATUS_BUBBLE_TTL_MS
+            ? v.statusMsg.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, '')
+            : '';
         const statusHtml = cleanStatus
           ? `<div class="vcard-status-msg">${escapeHtml(cleanStatus)}</div>`
           : '';
