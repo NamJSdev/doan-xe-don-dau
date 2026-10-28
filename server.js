@@ -21,7 +21,15 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
+  }
+}));
 app.use(express.json());
 
 // ==================== SERVER STORAGE & MEMORY QUOTAS ====================
@@ -626,6 +634,12 @@ async function startRoomSimulator(roomCode, centerLat = 21.028511, centerLng = 1
           statusMsg: item.msg,
           statusTime: now
         });
+        setTimeout(() => {
+          if (targetV && targetV.statusTime === now) {
+            targetV.statusMsg = '';
+            targetV.statusTime = 0;
+          }
+        }, 7000);
       }
     }
 
