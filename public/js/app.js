@@ -34,7 +34,6 @@
     // Follow & Google Maps Turn-by-Turn Navigation state
     followTargetId: localStorage.getItem('wc_followTargetId') || null, // vehicleId or 'wp:<waypointId>'
     navMode: localStorage.getItem('wc_navMode') === 'true',
-    navVoice: localStorage.getItem('wc_navVoice') !== 'false',
     cameraMode: 'target',     // 'drive' | 'target' | 'both' | 'free'
     showTrail: true,
     showRoute: true,
@@ -76,9 +75,6 @@
     navTurnDistance: document.getElementById('navTurnDistance'),
     navArrivalClock: document.getElementById('navArrivalClock'),
     navTurnInstruction: document.getElementById('navTurnInstruction'),
-    btnToggleNavVoice: document.getElementById('btnToggleNavVoice'),
-    iconVoiceOn: document.getElementById('iconVoiceOn'),
-    iconVoiceOff: document.getElementById('iconVoiceOff'),
     btnExitNavMode: document.getElementById('btnExitNavMode'),
     navNextStepRow: document.getElementById('navNextStepRow'),
     navNextStepIcon: document.getElementById('navNextStepIcon'),
@@ -830,8 +826,6 @@
   let activeRouteDurationSec = 0;
   let activeRouteDistanceMeters = 0;
   let routeArrows = [];
-  let lastSpokenStepKey = '';
-  let lastSpokenNearKey = '';
 
   function getManeuverIconSvg(iconKey, size = 28) {
     if (iconKey === 'left') {
@@ -940,25 +934,6 @@
     };
   }
 
-  function speakViNav(text) {
-    if (!state.navMode || !state.navVoice) return;
-    if (!('speechSynthesis' in window)) return;
-    try {
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = 'vi-VN';
-      utter.rate = 1.05;
-      window.speechSynthesis.speak(utter);
-    } catch (e) {}
-  }
-
-  function syncNavVoiceButtonUi() {
-    if (!el.btnToggleNavVoice) return;
-    el.btnToggleNavVoice.classList.toggle('active', state.navVoice);
-    if (el.iconVoiceOn) el.iconVoiceOn.classList.toggle('hidden', !state.navVoice);
-    if (el.iconVoiceOff) el.iconVoiceOff.classList.toggle('hidden', state.navVoice);
-  }
-
   function syncNavModeUi() {
     if (el.navTurnBanner) {
       el.navTurnBanner.classList.toggle('hidden', !state.navMode || !state.followTargetId);
@@ -969,7 +944,6 @@
     if (el.btnToggleNavText) {
       el.btnToggleNavText.textContent = state.navMode ? 'Đang dẫn' : 'Chỉ đường';
     }
-    syncNavVoiceButtonUi();
   }
 
   // Returns the driver's origin coordinates (real GPS if available, or virtual chase car in Demo Mode)
@@ -1022,8 +996,6 @@
     }
 
     lastRouteKey = '';
-    lastSpokenStepKey = '';
-    lastSpokenNearKey = '';
     updateCameraModeButtons();
     el.followHud.classList.remove('hidden');
     syncNavModeUi();
@@ -1047,14 +1019,9 @@
         setSheetState('minimized');
       }
       lastRouteKey = '';
-      lastSpokenStepKey = '';
-      lastSpokenNearKey = '';
       showToast('Đã bật Chế Độ Chỉ Đường Lái Xe (Dẫn đường từng chặng rẽ)');
     } else {
       if (el.navStepsDrawer) el.navStepsDrawer.classList.add('hidden');
-      if ('speechSynthesis' in window) {
-        try { window.speechSynthesis.cancel(); } catch (e) {}
-      }
       if (state.cameraMode === 'drive') {
         state.cameraMode = 'target';
       }
@@ -1074,9 +1041,6 @@
     localStorage.setItem('wc_navMode', 'false');
     el.followHud.classList.add('hidden');
     if (el.navTurnBanner) el.navTurnBanner.classList.add('hidden');
-    if ('speechSynthesis' in window) {
-      try { window.speechSynthesis.cancel(); } catch (e) {}
-    }
     clearActiveRoute();
     refreshAllTrails();
     renderVehicleCardsList();
@@ -1207,19 +1171,6 @@
           `;
         })
         .join('');
-    }
-
-    // Trigger Vietnamese voice announcement when a new step starts or when approaching < 80m
-    const stepKey = `${currentStep.lat.toFixed(4)},${currentStep.lng.toFixed(4)}:${currentStep.instruction}`;
-    if (stepKey !== lastSpokenStepKey && distToTurn > 35) {
-      lastSpokenStepKey = stepKey;
-      const distSpoken = distToTurn >= 1000
-        ? `Sau ${(distToTurn / 1000).toFixed(1)} ki lô mét`
-        : `Sau ${Math.max(20, Math.round(distToTurn / 10) * 10)} mét`;
-      speakViNav(`${distSpoken}, ${currentStep.instruction}`);
-    } else if (distToTurn <= 80 && distToTurn >= 25 && lastSpokenNearKey !== stepKey) {
-      lastSpokenNearKey = stepKey;
-      speakViNav(`Chuẩn bị ${currentStep.instruction}`);
     }
   }
 
@@ -2180,25 +2131,6 @@
   if (el.btnExitNavMode) {
     el.btnExitNavMode.addEventListener('click', () => {
       toggleNavigationMode(false);
-    });
-  }
-
-  if (el.btnToggleNavVoice) {
-    el.btnToggleNavVoice.addEventListener('click', () => {
-      state.navVoice = !state.navVoice;
-      localStorage.setItem('wc_navVoice', state.navVoice ? 'true' : 'false');
-      syncNavVoiceButtonUi();
-      if (state.navVoice) {
-        showToast('Đã bật giọng nói chỉ đường Tiếng Việt');
-        if (el.navTurnInstruction && el.navTurnInstruction.textContent) {
-          speakViNav(el.navTurnInstruction.textContent);
-        }
-      } else {
-        if ('speechSynthesis' in window) {
-          try { window.speechSynthesis.cancel(); } catch (e) {}
-        }
-        showToast('Đã tắt giọng nói chỉ đường');
-      }
     });
   }
 
