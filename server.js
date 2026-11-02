@@ -343,15 +343,19 @@ function trimConvoyTrails(room) {
 
     for (const other of others) {
       let bestIdx = -1;
-      let bestDist = Infinity;
+      let bestDistSq = Infinity;
+      const cosLat = Math.cos((other.lat * Math.PI) / 180);
       for (let i = 0; i < v.trail.length; i++) {
         const pt = v.trail[i];
-        const d = getDistanceMeters(other.lat, other.lng, pt.lat, pt.lng);
-        if (d < bestDist) {
-          bestDist = d;
+        const dx = (other.lng - pt.lng) * cosLat;
+        const dy = other.lat - pt.lat;
+        const dSq = dx * dx + dy * dy;
+        if (dSq < bestDistSq) {
+          bestDistSq = dSq;
           bestIdx = i;
         }
       }
+      const bestDist = Math.sqrt(bestDistSq) * 111319.5;
       // Consider 'other' as following on v's trail if within 5000m (5km) of the trail and behind v's head
       if (bestIdx >= 0 && bestIdx < v.trail.length - 1 && bestDist <= 5000) {
         trailingIndices.push(bestIdx);
@@ -831,6 +835,16 @@ function extractCoordsFromGoogleMapsText(text) {
   return null;
 }
 
+// Bounded LRU cache for resolved shortened Google Maps URLs (max 60 entries)
+const gmapsResolveCache = new Map();
+function cacheResolvedGmaps(key, val) {
+  if (gmapsResolveCache.size >= 60) {
+    const firstKey = gmapsResolveCache.keys().next().value;
+    gmapsResolveCache.delete(firstKey);
+  }
+  gmapsResolveCache.set(key, val);
+}
+
 // Resolve full or shortened Google Maps links (maps.app.goo.gl / goo.gl/maps / google.com/maps)
 app.get('/api/resolve-gmaps', async (req, res) => {
   const rawInput = String(req.query.url || '').trim();
@@ -838,9 +852,14 @@ app.get('/api/resolve-gmaps', async (req, res) => {
     return res.status(400).json({ ok: false, message: 'Vui lòng dán đường link Google Maps!' });
   }
 
+  if (gmapsResolveCache.has(rawInput)) {
+    return res.json({ ok: true, ...gmapsResolveCache.get(rawInput) });
+  }
+
   // Fast path: if coordinates are already directly inside the input string/URL
   const direct = extractCoordsFromGoogleMapsText(rawInput);
   if (direct) {
+    cacheResolvedGmaps(rawInput, direct);
     return res.json({ ok: true, ...direct });
   }
 
@@ -872,14 +891,18 @@ app.get('/api/resolve-gmaps', async (req, res) => {
     const finalUrl = response.url || targetUrl;
     const fromRedirectUrl = extractCoordsFromGoogleMapsText(finalUrl);
     if (fromRedirectUrl) {
-      return res.json({ ok: true, ...fromRedirectUrl, resolvedUrl: finalUrl });
+      const payload = { ...fromRedirectUrl, resolvedUrl: finalUrl };
+      cacheResolvedGmaps(rawInput, payload);
+      return res.json({ ok: true, ...payload });
     }
 
     // Also inspect HTML body for embedded staticmap center or APP_INITIALIZATION_STATE coordinates
     const html = (await response.text()).slice(0, 180000);
     const fromHtml = extractCoordsFromGoogleMapsText(html);
     if (fromHtml) {
-      return res.json({ ok: true, ...fromHtml, resolvedUrl: finalUrl });
+      const payload = { ...fromHtml, resolvedUrl: finalUrl };
+      cacheResolvedGmaps(rawInput, payload);
+      return res.json({ ok: true, ...payload });
     }
 
     const initStateMatch = html.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
@@ -887,7 +910,9 @@ app.get('/api/resolve-gmaps', async (req, res) => {
       const lat = parseFloat(initStateMatch[1]);
       const lng = parseFloat(initStateMatch[2]);
       if (!isNaN(lat) && !isNaN(lng)) {
-        return res.json({ ok: true, lat: roundCoord(lat), lng: roundCoord(lng), placeName: '' });
+        const payload = { lat: roundCoord(lat), lng: roundCoord(lng), placeName: '' };
+        cacheResolvedGmaps(rawInput, payload);
+        return res.json({ ok: true, ...payload });
       }
     }
 
@@ -1116,6 +1141,16 @@ io.on('connection', (socket) => {
       }
     }
 
+    // Stationary Broadcast Deduplication: If car is completely stopped at red light and already broadcast within 8s, skip network fan-out
+    const prevSpeed = v.speed || 0;
+    const isStationary = movedDist === 0 && computedSpeed === 0 && prevSpeed === 0;
+    if (isStationary && hasPrev && now - (v._lastBroadcastTs || 0) < 8000) {
+      v.online = true;
+      v.socketId = socket.id;
+      v.lastUpdated = now;
+      return;
+    }
+
     v.lat = roundCoord(lat);
     v.lng = roundCoord(lng);
     v.heading = Math.round(computedHeading);
@@ -1124,6 +1159,7 @@ io.on('connection', (socket) => {
     v.online = true;
     v.socketId = socket.id;
     v.lastUpdated = now;
+    v._lastBroadcastTs = now;
     room.updatedAt = now;
 
     // 5. Speed-Adaptive Trail Filter + Collinear Compression (Supports 100km - 300km+ routes)

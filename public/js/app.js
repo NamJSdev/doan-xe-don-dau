@@ -212,17 +212,28 @@
     layers: [googleTrafficLayer]
   });
 
+  let activeTileLayerKey = 'traffic';
+
   function syncBaseMapLayer() {
+    let desiredKey = 'street';
+    if (state.isSatellite) {
+      desiredKey = 'sat';
+    } else if (state.navMode) {
+      desiredKey = 'street';
+    } else if (state.showTraffic) {
+      desiredKey = 'traffic';
+    }
+
+    if (desiredKey === activeTileLayerKey) return;
+    activeTileLayerKey = desiredKey;
+
     map.removeLayer(googleTrafficLayer);
     map.removeLayer(googleStreetLayer);
     map.removeLayer(googleSatelliteLayer);
 
-    if (state.isSatellite) {
+    if (desiredKey === 'sat') {
       map.addLayer(googleSatelliteLayer);
-    } else if (state.navMode) {
-      // In Full-Screen Google Maps Driving Mode, use clean Street layer so the royal-blue route pops out cleanly
-      map.addLayer(googleStreetLayer);
-    } else if (state.showTraffic) {
+    } else if (desiredKey === 'traffic') {
       map.addLayer(googleTrafficLayer);
     } else {
       map.addLayer(googleStreetLayer);
@@ -611,38 +622,53 @@
         iconAnchor: [0, 0]
       });
       marker.setIcon(icon);
+      marker._domRefs = null;
       marker.setZIndexOffset(v.role === 'lead' ? 1000 : (v.id === state.myId ? 900 : 500));
     } else {
-      // Patch DOM in-place for zero layout thrashing and silky CSS rotation
+      // Patch DOM in-place with cached element references for zero querySelector overhead
       const domEl = marker.getElement();
       if (domEl) {
-        const wrapper = domEl.querySelector('.vehicle-marker-wrapper');
-        if (wrapper) wrapper.style.opacity = v.online === false ? '0.6' : '1';
+        if (!marker._domRefs || marker._domRefs.domEl !== domEl) {
+          marker._domRefs = {
+            domEl,
+            wrapper: domEl.querySelector('.vehicle-marker-wrapper'),
+            cone: domEl.querySelector('.direction-cone'),
+            speedTag: domEl.querySelector('.marker-speed-tag'),
+            bubble: domEl.querySelector('.marker-status-bubble')
+          };
+        }
+        const refs = marker._domRefs;
+        const origin = state.navMode ? getDriverOriginCoords() : null;
+        const isActiveNavDriverCar = Boolean(
+          state.navMode &&
+            state.followTargetId &&
+            ((origin && origin.id && v.id === origin.id) || (!origin?.isVirtual && v.id === state.myId))
+        );
+        domEl.style.display = isActiveNavDriverCar ? 'none' : '';
 
-        const cone = domEl.querySelector('.direction-cone');
-        if (cone && typeof v.heading === 'number') {
+        if (refs.wrapper) refs.wrapper.style.opacity = v.online === false ? '0.6' : '1';
+
+        if (refs.cone && typeof v.heading === 'number') {
           const smoothDeg = getSmoothRotation(v.id, v.heading);
-          cone.style.transform = `rotate(${smoothDeg}deg)`;
+          refs.cone.style.transform = `rotate(${smoothDeg}deg)`;
         }
 
-        const speedTag = domEl.querySelector('.marker-speed-tag');
-        if (speedTag) {
-          speedTag.textContent = v.speed && v.speed > 1 ? `${v.speed}km/h` : '';
+        if (refs.speedTag) {
+          const spText = v.speed && v.speed > 1 ? `${v.speed}km/h` : '';
+          if (refs.speedTag.textContent !== spText) refs.speedTag.textContent = spText;
         }
 
-        const bubble = domEl.querySelector('.marker-status-bubble');
-        if (bubble) {
+        if (refs.bubble) {
           const cleanStatus =
-          v.statusMsg && v.statusTime && Date.now() - v.statusTime < STATUS_BUBBLE_TTL_MS
-            ? v.statusMsg.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, '')
-            : '';
-          const hasFreshStatus = cleanStatus && v.statusTime && (Date.now() - v.statusTime < STATUS_BUBBLE_TTL_MS);
-          if (hasFreshStatus) {
-            bubble.textContent = cleanStatus;
-            bubble.classList.remove('hidden');
+            v.statusMsg && v.statusTime && Date.now() - v.statusTime < STATUS_BUBBLE_TTL_MS
+              ? v.statusMsg.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, '')
+              : '';
+          if (cleanStatus) {
+            if (refs.bubble.textContent !== cleanStatus) refs.bubble.textContent = cleanStatus;
+            refs.bubble.classList.remove('hidden');
             scheduleStatusBubbleExpiry(v.id);
           } else {
-            bubble.classList.add('hidden');
+            refs.bubble.classList.add('hidden');
           }
         }
       }
@@ -704,10 +730,14 @@
     }
 
     const isFollowed = state.followTargetId === v.id;
+    // In Full-Screen Google Maps Driving Mode, hide breadcrumb trail unless showAllTrails is explicitly enabled
+    // so only the clean royal-blue route (#3b1eff) is drawn on the road
     const shouldDraw =
-      (isFollowed && state.showTrail) ||
-      (state.showAllTrails && v.trail && v.trail.length > 1) ||
-      (v.role === 'lead' && !state.followTargetId && state.showTrail);
+      !state.navMode
+        ? ((isFollowed && state.showTrail) ||
+            (state.showAllTrails && v.trail && v.trail.length > 1) ||
+            (v.role === 'lead' && !state.followTargetId && state.showTrail))
+        : Boolean(state.showAllTrails && v.trail && v.trail.length > 1);
 
     if (!shouldDraw || !Array.isArray(v.trail) || v.trail.length < 2) {
       return;
@@ -877,16 +907,26 @@
     `;
   }
 
-  // Project driver GPS onto the active OSRM route line for road-snapped navigation
+  let lastSnapCache = { lat: null, lng: null, coordsRef: null, result: null };
+
+  // Project driver GPS onto the active OSRM route line for road-snapped navigation (Fast Planar Equirectangular + Cache)
   function snapPointToRoute(lat, lng, coords) {
     if (!Array.isArray(coords) || coords.length < 2) {
       return { lat, lng, bearing: null, forwardCoords: coords || [] };
     }
-    let bestDist = Infinity;
+    if (
+      lastSnapCache.coordsRef === coords &&
+      lastSnapCache.lat === lat &&
+      lastSnapCache.lng === lng &&
+      lastSnapCache.result
+    ) {
+      return lastSnapCache.result;
+    }
+
+    let bestDistSq = Infinity;
     let bestLat = lat;
     let bestLng = lng;
     let bestSegIdx = 0;
-    let bestBearing = null;
 
     const cosLat = Math.cos((lat * Math.PI) / 180);
 
@@ -909,23 +949,30 @@
 
       const projLat = aLat + t * (bLat - aLat);
       const projLng = aLng + t * (bLng - aLng);
-      const d = getDistanceMeters(lat, lng, projLat, projLng);
+      const ex = (lng - projLng) * cosLat;
+      const ey = lat - projLat;
+      const dSq = ex * ex + ey * ey;
 
-      if (d < bestDist) {
-        bestDist = d;
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq;
         bestLat = projLat;
         bestLng = projLng;
         bestSegIdx = i;
-        if (getDistanceMeters(aLat, aLng, bLat, bLng) > 2) {
-          bestBearing = computeBearing(aLat, aLng, bLat, bLng);
-        }
       }
     }
+
+    const bestDist = Math.sqrt(bestDistSq) * 111319.5;
+    let bestBearing = null;
 
     // Only snap onto road if car is within 45 meters of the route
     if (bestDist <= 45) {
       const forwardCoords = [[bestLat, bestLng], ...coords.slice(bestSegIdx + 1)];
-      // Compute smooth look-ahead road bearing (~22m ahead along the route) so the road ahead points straight UP
+      const a = coords[bestSegIdx];
+      const b = coords[bestSegIdx + 1];
+      if (a && b && getDistanceMeters(a[0], a[1], b[0], b[1]) > 2) {
+        bestBearing = computeBearing(a[0], a[1], b[0], b[1]);
+      }
+      // Compute smooth look-ahead road bearing (~15m ahead along the route) so the road ahead points straight UP
       let accDist = 0;
       for (let k = 0; k < forwardCoords.length - 1; k++) {
         const segD = getDistanceMeters(
@@ -942,20 +989,24 @@
           break;
         }
       }
-      return {
+      const res = {
         lat: bestLat,
         lng: bestLng,
         bearing: bestBearing,
         forwardCoords
       };
+      lastSnapCache = { lat, lng, coordsRef: coords, result: res };
+      return res;
     }
 
-    return {
+    const fallbackRes = {
       lat,
       lng,
       bearing: null,
       forwardCoords: [[lat, lng], ...coords]
     };
+    lastSnapCache = { lat, lng, coordsRef: coords, result: fallbackRes };
+    return fallbackRes;
   }
 
   function updateDriver3dCarMarker(lat, lng, headingDeg, show) {
@@ -1000,6 +1051,8 @@
     return [lat + (dLat * 180) / Math.PI, lng + (dLng * 180) / Math.PI];
   }
 
+  let lastAppliedMapDeg = null;
+
   function applyMap3dHeadingTransform(headingDeg) {
     currentRoadHeading = headingDeg || 0;
     const isDrivingFull = Boolean(state.navMode && state.followTargetId);
@@ -1014,17 +1067,21 @@
 
     const wasTilted = document.body.classList.contains('gmaps-3d-tilt');
     if (is3dActive) {
-      document.body.classList.add('gmaps-3d-tilt');
-      const smoothMapDeg = getSmoothRotation('mapBearing', -(headingDeg || 0));
-      document.documentElement.style.setProperty('--map-heading-deg', `${smoothMapDeg}deg`);
-      if (el.gmapsCompassSvg) {
-        el.gmapsCompassSvg.style.transform = `rotate(${smoothMapDeg}deg)`;
-      }
       if (!wasTilted) {
+        document.body.classList.add('gmaps-3d-tilt');
         map.invalidateSize({ pan: false });
       }
-    } else {
+      const smoothMapDeg = getSmoothRotation('mapBearing', -(headingDeg || 0));
+      if (lastAppliedMapDeg === null || Math.abs(smoothMapDeg - lastAppliedMapDeg) >= 0.35 || !wasTilted) {
+        lastAppliedMapDeg = smoothMapDeg;
+        document.documentElement.style.setProperty('--map-heading-deg', `${smoothMapDeg}deg`);
+        if (el.gmapsCompassSvg) {
+          el.gmapsCompassSvg.style.transform = `rotate(${smoothMapDeg}deg)`;
+        }
+      }
+    } else if (wasTilted || lastAppliedMapDeg !== 0) {
       document.body.classList.remove('gmaps-3d-tilt');
+      lastAppliedMapDeg = 0;
       document.documentElement.style.setProperty('--map-heading-deg', '0deg');
       if (el.gmapsCompassSvg) {
         el.gmapsCompassSvg.style.transform = 'rotate(0deg)';
@@ -1142,25 +1199,50 @@
     };
   }
 
+  let lastDrivingFullState = null;
+
   function syncNavModeUi() {
     const isDrivingFull = Boolean(state.navMode && state.followTargetId);
-    document.body.classList.toggle('gmaps-driving-mode', isDrivingFull);
     syncBaseMapLayer();
-    if (!isDrivingFull) {
-      const wasTilted = document.body.classList.contains('gmaps-3d-tilt');
-      document.body.classList.remove('gmaps-3d-tilt');
-      document.documentElement.style.setProperty('--map-heading-deg', '0deg');
-      if (wasTilted) map.invalidateSize({ pan: false });
-      updateDriver3dCarMarker(0, 0, 0, false);
+
+    if (lastDrivingFullState !== isDrivingFull) {
+      lastDrivingFullState = isDrivingFull;
+      document.body.classList.toggle('gmaps-driving-mode', isDrivingFull);
+      if (el.navTurnBanner) {
+        el.navTurnBanner.classList.toggle('hidden', !isDrivingFull);
+      }
+      if (!isDrivingFull) {
+        const wasTilted = document.body.classList.contains('gmaps-3d-tilt');
+        document.body.classList.remove('gmaps-3d-tilt');
+        lastAppliedMapDeg = 0;
+        document.documentElement.style.setProperty('--map-heading-deg', '0deg');
+        if (wasTilted) map.invalidateSize({ pan: false });
+        updateDriver3dCarMarker(0, 0, 0, false);
+      }
+      // Refresh driver marker visibility & trails when entering/exiting Full-Screen Driving Mode
+      const origin = getDriverOriginCoords();
+      Object.values(state.vehicles).forEach((v) => {
+        const m = vehicleMarkers[v.id];
+        const domEl = m && m.getElement();
+        if (domEl) {
+          const hidePin = Boolean(
+            isDrivingFull &&
+              ((origin && origin.id && v.id === origin.id) || (!origin?.isVirtual && v.id === state.myId))
+          );
+          domEl.style.display = hidePin ? 'none' : '';
+        }
+      });
+      refreshAllTrails();
     }
-    if (el.navTurnBanner) {
-      el.navTurnBanner.classList.toggle('hidden', !isDrivingFull);
-    }
+
     if (el.btnToggleNavMode) {
       el.btnToggleNavMode.classList.toggle('active', state.navMode);
     }
     if (el.btnToggleNavText) {
-      el.btnToggleNavText.textContent = state.navMode ? 'Đang dẫn' : 'Bắt đầu';
+      const btnText = state.navMode ? 'Đang dẫn' : 'Bắt đầu';
+      if (el.btnToggleNavText.textContent !== btnText) {
+        el.btnToggleNavText.textContent = btnText;
+      }
     }
   }
 
@@ -1168,6 +1250,7 @@
   function getDriverOriginCoords() {
     if (typeof state.myLat === 'number' && typeof state.myLng === 'number') {
       return {
+        id: state.myId,
         lat: state.myLat,
         lng: state.myLng,
         heading: state.myHeading || 0,
@@ -1183,6 +1266,7 @@
           : state.vehicles['DEMO-XE-3'];
       if (demoDriver && typeof demoDriver.lat === 'number' && typeof demoDriver.lng === 'number') {
         return {
+          id: demoDriver.id,
           lat: demoDriver.lat,
           lng: demoDriver.lng,
           heading: demoDriver.heading || 0,
@@ -1296,6 +1380,8 @@
     activeNavSteps = [];
     activeRouteCoords = [];
     lastRouteKey = '';
+    lastRouteStyleIsNav = null;
+    lastSnapCache = { lat: null, lng: null, coordsRef: null, result: null };
   }
 
   function formatEtaMinutes(mins) {
@@ -1312,6 +1398,11 @@
     return `${hh}:${mm}`;
   }
 
+  let lastRenderedManeuverIcon = '';
+  let lastRenderedNextIcon = '';
+  let lastRenderedStepIdx = -1;
+  let lastRenderedStepsCount = 0;
+
   function renderTurnByTurnBanner(fromLat, fromLng, targetLat, targetLng, targetTitle) {
     if (!state.navMode || !el.navTurnBanner) return;
     el.navTurnBanner.classList.remove('hidden');
@@ -1322,16 +1413,21 @@
     const clockStr = formatArrivalClockTime(activeRouteDurationSec || directMeters / 10);
 
     if (el.gmapsBottomDuration) {
-      el.gmapsBottomDuration.textContent = formatEtaMinutes(mins);
+      const durStr = formatEtaMinutes(mins);
+      if (el.gmapsBottomDuration.textContent !== durStr) el.gmapsBottomDuration.textContent = durStr;
     }
     if (el.navArrivalClock) {
-      el.navArrivalClock.textContent = `${formatDistance(totalDistMeters)} • ${clockStr}`;
+      const subStr = `${formatDistance(totalDistMeters)} • ${clockStr}`;
+      if (el.navArrivalClock.textContent !== subStr) el.navArrivalClock.textContent = subStr;
     }
 
     if (directMeters < 28) {
       el.navTurnDistance.textContent = `${Math.round(directMeters)} m`;
       el.navTurnInstruction.textContent = `Đến ${targetTitle}`;
-      el.navManeuverIcon.innerHTML = getManeuverIconSvg('arrive', 42);
+      if (lastRenderedManeuverIcon !== 'arrive') {
+        lastRenderedManeuverIcon = 'arrive';
+        el.navManeuverIcon.innerHTML = getManeuverIconSvg('arrive', 42);
+      }
       if (el.navNextStepRow) el.navNextStepRow.classList.add('hidden');
       return;
     }
@@ -1339,7 +1435,10 @@
     if (!activeNavSteps || activeNavSteps.length === 0) {
       el.navTurnDistance.textContent = formatDistance(directMeters);
       el.navTurnInstruction.textContent = `Đi tới ${targetTitle}`;
-      el.navManeuverIcon.innerHTML = getManeuverIconSvg('straight', 42);
+      if (lastRenderedManeuverIcon !== 'straight') {
+        lastRenderedManeuverIcon = 'straight';
+        el.navManeuverIcon.innerHTML = getManeuverIconSvg('straight', 42);
+      }
       if (el.navNextStepRow) el.navNextStepRow.classList.add('hidden');
       return;
     }
@@ -1364,22 +1463,41 @@
     const distToTurn = getDistanceMeters(fromLat, fromLng, currentStep.lat, currentStep.lng);
     const displayDist = formatDistance(distToTurn);
 
-    el.navTurnDistance.textContent = displayDist;
-    el.navTurnInstruction.textContent = currentStep.instruction;
-    el.navManeuverIcon.innerHTML = getManeuverIconSvg(currentStep.iconKey, 42);
+    if (el.navTurnDistance.textContent !== displayDist) {
+      el.navTurnDistance.textContent = displayDist;
+    }
+    if (el.navTurnInstruction.textContent !== currentStep.instruction) {
+      el.navTurnInstruction.textContent = currentStep.instruction;
+    }
+    if (lastRenderedManeuverIcon !== currentStep.iconKey) {
+      lastRenderedManeuverIcon = currentStep.iconKey;
+      el.navManeuverIcon.innerHTML = getManeuverIconSvg(currentStep.iconKey, 42);
+    }
 
     // Populate "Sau đó" (Next turn after current turn)
     const followingStep = activeNavSteps[stepIdx + 1];
     if (followingStep && el.navNextStepRow) {
       el.navNextStepRow.classList.remove('hidden');
-      el.navNextStepIcon.innerHTML = getManeuverIconSvg(followingStep.iconKey, 16);
-      el.navNextStepText.textContent = `${followingStep.instruction} (${formatDistance(followingStep.distance)})`;
+      if (lastRenderedNextIcon !== followingStep.iconKey) {
+        lastRenderedNextIcon = followingStep.iconKey;
+        el.navNextStepIcon.innerHTML = getManeuverIconSvg(followingStep.iconKey, 16);
+      }
+      const nextText = `${followingStep.instruction} (${formatDistance(followingStep.distance)})`;
+      if (el.navNextStepText.textContent !== nextText) {
+        el.navNextStepText.textContent = nextText;
+      }
     } else if (el.navNextStepRow) {
       el.navNextStepRow.classList.add('hidden');
     }
 
-    // Populate expandable steps list drawer
-    if (el.navStepsList) {
+    // Only rebuild expandable steps list when stepIdx changes or drawer is open
+    const isDrawerOpen = el.navStepsDrawer && !el.navStepsDrawer.classList.contains('hidden');
+    if (
+      el.navStepsList &&
+      (stepIdx !== lastRenderedStepIdx || activeNavSteps.length !== lastRenderedStepsCount || isDrawerOpen)
+    ) {
+      lastRenderedStepIdx = stepIdx;
+      lastRenderedStepsCount = activeNavSteps.length;
       el.navStepsList.innerHTML = activeNavSteps
         .slice(stepIdx)
         .map((st, idx) => {
@@ -1505,14 +1623,9 @@
     }
   }
 
-  function drawRoutePolyline(latlngs, originLat = null, originLng = null) {
-    if (activeRouteCasing) routeLayerGroup.removeLayer(activeRouteCasing);
-    if (activeRouteLine) routeLayerGroup.removeLayer(activeRouteLine);
-    if (routeArrows.length > 0) {
-      routeArrows.forEach((m) => routeLayerGroup.removeLayer(m));
-      routeArrows = [];
-    }
+  let lastRouteStyleIsNav = null;
 
+  function drawRoutePolyline(latlngs, originLat = null, originLng = null) {
     const isNav = state.navMode;
     let displayPts = latlngs;
 
@@ -1522,49 +1635,81 @@
       displayPts = snapped.forwardCoords.length >= 2 ? snapped.forwardCoords : latlngs;
     }
 
-    activeRouteCasing = L.polyline(displayPts, {
+    const casingStyle = {
       color: isNav ? '#1e1b4b' : '#090d16',
       weight: isNav ? 12 : 8,
       opacity: isNav ? 0.95 : 0.65,
       lineCap: 'round',
       lineJoin: 'round'
-    }).addTo(routeLayerGroup);
-
-    activeRouteLine = L.polyline(displayPts, {
+    };
+    const lineStyle = {
       color: isNav ? '#3b1eff' : '#22d3ee',
       weight: isNav ? 8 : 5,
       dashArray: isNav ? null : '10, 10',
       opacity: 1,
       lineCap: 'round',
       lineJoin: 'round'
-    }).addTo(routeLayerGroup);
+    };
 
-    // Highlight the upcoming turn intersection with a crisp white directional chevron (Google Maps style)
+    // Reuse existing L.polyline instances instead of destroying/recreating layers on every GPS tick
+    if (!activeRouteCasing) {
+      activeRouteCasing = L.polyline(displayPts, casingStyle).addTo(routeLayerGroup);
+    } else {
+      activeRouteCasing.setLatLngs(displayPts);
+      if (lastRouteStyleIsNav !== isNav) activeRouteCasing.setStyle(casingStyle);
+    }
+
+    if (!activeRouteLine) {
+      activeRouteLine = L.polyline(displayPts, lineStyle).addTo(routeLayerGroup);
+    } else {
+      activeRouteLine.setLatLngs(displayPts);
+      if (lastRouteStyleIsNav !== isNav) activeRouteLine.setStyle(lineStyle);
+    }
+    lastRouteStyleIsNav = isNav;
+
+    // Highlight the upcoming turn intersection with a crisp white directional chevron (reusing single marker)
+    let placedArrow = false;
     if (isNav && displayPts.length >= 3) {
       const turnStep = activeNavSteps.find((s) => s.type !== 'depart' && s.type !== 'arrive') || activeNavSteps[0];
       if (turnStep && typeof turnStep.lat === 'number') {
         let turnIdx = -1;
-        let minD = Infinity;
+        let minDSq = Infinity;
+        const cosLat = Math.cos((turnStep.lat * Math.PI) / 180);
         for (let i = 1; i < displayPts.length - 1; i++) {
-          const d = getDistanceMeters(turnStep.lat, turnStep.lng, displayPts[i][0], displayPts[i][1]);
-          if (d < minD) {
-            minD = d;
+          const dx = (displayPts[i][1] - turnStep.lng) * cosLat;
+          const dy = displayPts[i][0] - turnStep.lat;
+          const dSq = dx * dx + dy * dy;
+          if (dSq < minDSq) {
+            minDSq = dSq;
             turnIdx = i;
           }
         }
         if (turnIdx > 0 && turnIdx < displayPts.length - 1) {
           const pNext = displayPts[Math.min(displayPts.length - 1, turnIdx + 1)];
           const pCurr = displayPts[turnIdx];
-          const angle = computeBearing(pCurr[0], pCurr[1], pNext[0], pNext[1]);
-          const arrowIcon = L.divIcon({
-            className: 'trail-arrow-icon',
-            html: `<div style="transform: translate(-50%, -50%) rotate(${angle}deg); width:22px; height:22px; display:flex; align-items:center; justify-content:center; filter:drop-shadow(0 1px 2px rgba(30,27,75,0.85));"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 15 12 8 19 15"/></svg></div>`,
-            iconSize: [0, 0]
-          });
-          const m = L.marker([pCurr[0], pCurr[1]], { icon: arrowIcon, interactive: false }).addTo(routeLayerGroup);
-          routeArrows.push(m);
+          const angle = Math.round(computeBearing(pCurr[0], pCurr[1], pNext[0], pNext[1]));
+          placedArrow = true;
+          if (routeArrows.length === 0) {
+            const arrowIcon = L.divIcon({
+              className: 'trail-arrow-icon',
+              html: `<div class="route-turn-chevron" style="transform: translate(-50%, -50%) rotate(${angle}deg); width:22px; height:22px; display:flex; align-items:center; justify-content:center; filter:drop-shadow(0 1px 2px rgba(30,27,75,0.85));"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 15 12 8 19 15"/></svg></div>`,
+              iconSize: [0, 0]
+            });
+            const m = L.marker([pCurr[0], pCurr[1]], { icon: arrowIcon, interactive: false }).addTo(routeLayerGroup);
+            routeArrows.push(m);
+          } else {
+            const m = routeArrows[0];
+            m.setLatLng([pCurr[0], pCurr[1]]);
+            const elDom = m.getElement();
+            const chev = elDom && elDom.querySelector('.route-turn-chevron');
+            if (chev) chev.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
+          }
         }
       }
+    }
+    if (!placedArrow && routeArrows.length > 0) {
+      routeArrows.forEach((m) => routeLayerGroup.removeLayer(m));
+      routeArrows = [];
     }
   }
 
@@ -1950,6 +2095,15 @@
     }
   });
 
+  let followHudRafId = null;
+  function scheduleFollowHudUpdate() {
+    if (followHudRafId) return;
+    followHudRafId = requestAnimationFrame(() => {
+      followHudRafId = null;
+      updateFollowHudAndCamera(false);
+    });
+  }
+
   socket.on('vehicle:location', (data) => {
     const v = state.vehicles[data.id];
     if (!v) return;
@@ -1978,13 +2132,14 @@
       replaceLastTrail: Boolean(data.replaceLastTrail)
     });
 
-    patchVehicleCardTelemetry(v);
-
-    // If my own GPS moved, also refresh relative distances on other cards
-    if (data.id === state.myId) {
-      Object.values(state.vehicles).forEach((other) => {
-        if (other.id !== state.myId) patchVehicleCardTelemetry(other);
-      });
+    // Skip updating hidden bottom-sheet cards while in Full-Screen Google Maps Driving Mode
+    if (!state.navMode) {
+      patchVehicleCardTelemetry(v);
+      if (data.id === state.myId) {
+        Object.values(state.vehicles).forEach((other) => {
+          if (other.id !== state.myId) patchVehicleCardTelemetry(other);
+        });
+      }
     }
 
     if (
@@ -1992,7 +2147,7 @@
       data.id === state.myId ||
       (state.simulating && state.myLat === null && (data.id === 'DEMO-XE-2' || data.id === 'DEMO-XE-3'))
     ) {
-      updateFollowHudAndCamera(false);
+      scheduleFollowHudUpdate();
     }
   });
 

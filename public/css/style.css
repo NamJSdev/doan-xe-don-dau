@@ -1828,19 +1828,23 @@ body.gmaps-driving-mode .quick-ping-pod {
 
 body.gmaps-driving-mode.gmaps-3d-tilt #map {
   position: fixed;
-  width: 220vmax !important;
-  height: 220vmax !important;
-  left: calc(50vw - 110vmax) !important;
-  top: calc(70vh - 110vmax) !important;
+  width: 168vmax !important;
+  height: 168vmax !important;
+  left: calc(50vw - 84vmax) !important;
+  top: calc(70vh - 84vmax) !important;
   right: auto !important;
   bottom: auto !important;
   transform-origin: 50% 50% !important;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
   transform: perspective(780px) rotateX(46deg) rotate(var(--map-heading-deg, 0deg));
 }
 
 /* Counter-rotate other vehicles & waypoint labels on the map so their text stays horizontal */
 body.gmaps-driving-mode.gmaps-3d-tilt .vehicle-marker-wrapper,
 body.gmaps-driving-mode.gmaps-3d-tilt .wp-map-marker {
+  will-change: transform;
   transform: rotate(calc(-1 * var(--map-heading-deg, 0deg)));
   transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
