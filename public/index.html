@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=2.6" />
+  <link rel="stylesheet" href="/css/style.css?v=2.7" />
 </head>
 <body>
   <!-- Main Google Map Container -->
@@ -195,6 +195,41 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="#1a73e8" stroke="none"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
       <span>Về giữa</span>
     </button>
+
+    <!-- Fixed 3D Isometric White Hatchback Car at (50vw, 70vh) (Exact Google Maps Driving Avatar) -->
+    <div class="gmaps-fixed-3d-car" id="gmapsFixed3dCar">
+      <svg width="68" height="68" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Soft Ground Shadow -->
+        <ellipse cx="39" cy="52" rx="24" ry="12" transform="rotate(-14 39 52)" fill="rgba(15, 23, 42, 0.34)" />
+        <ellipse cx="39" cy="50" rx="19" ry="9" transform="rotate(-14 39 50)" fill="rgba(15, 23, 42, 0.22)" />
+        <!-- Left Front Wheel (partially visible) -->
+        <ellipse cx="24" cy="36" rx="5.5" ry="6.5" fill="#1e293b" />
+        <!-- Main Lower Chassis & Bumper (3D White-Gray Shaded) -->
+        <path d="M18 44 C16 36, 22 25, 34 22 L52 21 C60 22, 64 29, 63 38 C62 45, 56 50, 44 53 L26 54 C20 53, 18 49, 18 44 Z" fill="#e2e8f0" stroke="#cbd5e1" stroke-width="1" />
+        <!-- Upper White Hatchback Body & Roof -->
+        <path d="M19 42 C18 33, 24 21, 35 18 L48 17 C56 18, 61 25, 61 35 C60 42, 54 47, 43 50 L26 51 C21 50, 19 46, 19 42 Z" fill="#ffffff" />
+        <!-- Roof Top Highlight -->
+        <path d="M25 26 C27 20, 34 18, 45 18 C51 18, 55 22, 55 27 C52 29, 36 31, 26 29 Z" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.8" />
+        <!-- Rear Windshield (Cyan/Blue Tinted Glass like Google Maps) -->
+        <path d="M22 30 C24 25, 31 24, 36 25 L35 37 C29 38, 23 36, 22 30 Z" fill="#38bdf8" stroke="#0284c7" stroke-width="0.8" />
+        <!-- Right Side Panoramic Windows (Cyan/Blue Tinted Glass) -->
+        <path d="M39 25 L53 23 C56 25, 58 29, 57 33 L39 36 Z" fill="#0ea5e9" />
+        <path d="M47 23.5 L46 35" stroke="#ffffff" stroke-width="2" />
+        <!-- Red Taillights on Rear Hatchback Tailgate -->
+        <rect x="19" y="36" width="4.5" height="6.5" rx="2" transform="rotate(-10 19 36)" fill="#ef4444" />
+        <rect x="32" y="39" width="5" height="6.5" rx="2" transform="rotate(-8 32 39)" fill="#ef4444" />
+        <!-- Rear License Plate Recess -->
+        <path d="M24 41 L31 42 L31 46 L24 45 Z" fill="#cbd5e1" />
+        <!-- Right Rear Wheel (3D Tire + Silver Alloy Rim) -->
+        <ellipse cx="37" cy="49" rx="6.8" ry="7.8" fill="#0f172a" />
+        <ellipse cx="37.5" cy="49" rx="4.2" ry="5" fill="#cbd5e1" />
+        <ellipse cx="37.5" cy="49" rx="1.8" ry="2.2" fill="#475569" />
+        <!-- Right Front Wheel (3D Tire + Silver Alloy Rim) -->
+        <ellipse cx="55" cy="41" rx="6.2" ry="7.2" fill="#0f172a" />
+        <ellipse cx="55.5" cy="41" rx="3.8" ry="4.5" fill="#cbd5e1" />
+        <ellipse cx="55.5" cy="41" rx="1.6" ry="2" fill="#475569" />
+      </svg>
+    </div>
 
     <!-- Bottom-Left Circular Speedometer Bubble -->
     <div class="gmaps-speed-circle" id="gmapsSpeedBubble">
@@ -570,6 +605,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/js/app.js?v=2.6"></script>
+  <script src="/js/app.js?v=2.7"></script>
 </body>
 </html>

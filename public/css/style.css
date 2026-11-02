@@ -1819,19 +1819,46 @@ body.gmaps-driving-mode .quick-ping-pod {
   z-index: 620;
 }
 
-/* Optional 3D Tilt when user toggles 3D view via Compass button */
+/* 3D Pivot-Centered Stage for Google Maps Driving Mode:
+   Centers the Leaflet map at (50vw, 70vh) and rotates/tilts around that exact car pivot! */
 #map {
-  transition: transform 0.35s ease-out;
-  transform-origin: 50% 65%;
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: 50% 50%;
 }
 
 body.gmaps-driving-mode.gmaps-3d-tilt #map {
-  transform: perspective(1100px) rotateX(28deg) scale(1.18);
+  position: fixed;
+  width: 220vmax !important;
+  height: 220vmax !important;
+  left: calc(50vw - 110vmax) !important;
+  top: calc(70vh - 110vmax) !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform-origin: 50% 50% !important;
+  transform: perspective(780px) rotateX(46deg) rotate(var(--map-heading-deg, 0deg));
 }
 
-.gmaps-3d-car-rotator {
-  transition: transform 0.35s linear;
-  will-change: transform;
+/* Counter-rotate other vehicles & waypoint labels on the map so their text stays horizontal */
+body.gmaps-driving-mode.gmaps-3d-tilt .vehicle-marker-wrapper,
+body.gmaps-driving-mode.gmaps-3d-tilt .wp-map-marker {
+  transform: rotate(calc(-1 * var(--map-heading-deg, 0deg)));
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Crisp Rear-3/4 3D White Hatchback Car anchored at (50vw, 70vh) in 3D Driving Mode */
+.gmaps-fixed-3d-car {
+  position: fixed;
+  left: 50%;
+  top: 70vh;
+  transform: translate(-50%, -50%);
+  width: 68px;
+  height: 68px;
+  z-index: 590;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 10px 10px rgba(15, 23, 42, 0.38));
 }
 
 .gmaps-driving-overlay {
