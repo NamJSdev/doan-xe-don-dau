@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=2.4" />
+  <link rel="stylesheet" href="/css/style.css?v=2.5" />
 </head>
 <body>
   <!-- Main Google Map Container -->
@@ -95,45 +95,8 @@
     </button>
   </header>
 
-  <!-- Collapsible Automotive Telemetry Follow HUD Banner -->
+  <!-- Collapsible Automotive Telemetry Follow HUD Banner (Step 1: "Chỉ đường" Preview Mode) -->
   <div class="follow-hud hidden" id="followHud">
-    <!-- Google Maps Style Turn-by-Turn Navigation Banner (Visible when Driving Navigation Mode is ON) -->
-    <div class="gmaps-nav-banner hidden" id="navTurnBanner">
-      <div class="gmaps-nav-main">
-        <div class="gmaps-maneuver-box" id="navManeuverIcon" title="Hướng rẽ tiếp theo">
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-        </div>
-        <div class="gmaps-nav-info" id="btnToggleNavSteps" title="Chạm để xem danh sách các chặng rẽ">
-          <div class="gmaps-nav-dist-row">
-            <span class="gmaps-nav-distance" id="navTurnDistance">-- m</span>
-            <span class="gmaps-nav-eta-pill" id="navArrivalClock">Đang tính đường...</span>
-          </div>
-          <div class="gmaps-nav-instruction" id="navTurnInstruction">Đi theo lộ trình chỉ đường</div>
-        </div>
-        <div class="gmaps-nav-actions">
-          <button type="button" class="btn-nav-icon close-nav" id="btnExitNavMode" title="Tắt chế độ chỉ đường lái xe">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- Next Turn ("Sau đó") Sub-bar like Google Maps -->
-      <div class="gmaps-nav-subbar hidden" id="navNextStepRow">
-        <span class="subbar-label">Sau đó:</span>
-        <span class="subbar-icon" id="navNextStepIcon"></span>
-        <span class="subbar-text" id="navNextStepText">Đi thẳng tiếp</span>
-      </div>
-
-      <!-- Expandable Step-by-Step Turn List -->
-      <div class="gmaps-steps-drawer hidden" id="navStepsDrawer">
-        <div class="steps-drawer-header">
-          <span>Chi tiết các chặng rẽ sắp tới</span>
-          <button type="button" id="btnCloseStepsDrawer">Đóng ✕</button>
-        </div>
-        <div class="steps-drawer-list" id="navStepsList"></div>
-      </div>
-    </div>
-
     <div class="follow-hud-main">
       <!-- Speedometer Gauge Box -->
       <div class="hud-speed-box" id="hudSpeedBox">
@@ -153,9 +116,9 @@
       </div>
 
       <div class="follow-hud-actions">
-        <button type="button" class="btn-start-nav" id="btnToggleNavMode" title="Bật/Tắt chế độ Chỉ Đường Lái Xe như Google Maps">
+        <button type="button" class="btn-start-nav" id="btnToggleNavMode" title="Bắt đầu chế độ dẫn đường lái xe kiểu Google Maps">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
-          <span id="btnToggleNavText">Chỉ đường</span>
+          <span id="btnToggleNavText">Bắt đầu</span>
         </button>
         <button type="button" class="btn-hud-collapse" id="btnCollapseHudIcon" title="Thu gọn/Xổ ra tùy chọn bám xe">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
@@ -187,6 +150,77 @@
           <span>App G.Maps ↗</span>
         </a>
       </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Full-Screen Google Maps Driving Navigation UI (Activated when clicking "Bắt đầu") -->
+  <div class="gmaps-driving-overlay hidden" id="navTurnBanner">
+    <!-- Top Deep Teal-Green Turn Banner -->
+    <div class="gmaps-top-card" id="btnToggleNavSteps" title="Chạm để xem các chặng rẽ tiếp theo">
+      <div class="gmaps-top-main">
+        <div class="gmaps-turn-arrow" id="navManeuverIcon">
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+        </div>
+        <div class="gmaps-turn-texts">
+          <div class="gmaps-turn-dist" id="navTurnDistance">-- m</div>
+          <div class="gmaps-turn-title" id="navTurnInstruction">Đi thẳng theo lộ trình</div>
+        </div>
+      </div>
+
+      <!-- Optional "Sau đó" Next Turn Strip -->
+      <div class="gmaps-next-turn-pill hidden" id="navNextStepRow">
+        <span>Sau đó:</span>
+        <span class="next-pill-icon" id="navNextStepIcon"></span>
+        <span class="next-pill-text" id="navNextStepText">Rẽ phải</span>
+      </div>
+
+      <!-- Expandable Step-by-Step Turn List -->
+      <div class="gmaps-steps-drawer hidden" id="navStepsDrawer">
+        <div class="steps-drawer-header">
+          <span>Các chặng rẽ tiếp theo</span>
+          <button type="button" id="btnCloseStepsDrawer">Đóng ✕</button>
+        </div>
+        <div class="steps-drawer-list" id="navStepsList"></div>
+      </div>
+    </div>
+
+    <!-- Bottom-Left Circular Speedometer Bubble -->
+    <div class="gmaps-speed-circle" id="gmapsSpeedBubble">
+      <span class="gmaps-speed-num" id="gmapsMySpeedVal">--</span>
+      <span class="gmaps-speed-unit">km/h</span>
+    </div>
+
+    <!-- Right Floating Circular Google Maps Controls -->
+    <div class="gmaps-right-fab-stack">
+      <button type="button" class="gmaps-circle-fab" id="btnGmapsCompass" title="Xoay bản đồ theo hướng xe chạy (3D) / Hướng Bắc">
+        <svg id="gmapsCompassSvg" width="26" height="26" viewBox="0 0 24 24" fill="none">
+          <polygon points="12,3 16,12 12,10 8,12" fill="#ea4335" />
+          <polygon points="12,21 16,12 12,14 8,12" fill="#94a3b8" />
+        </svg>
+      </button>
+      <button type="button" class="gmaps-circle-fab" id="btnGmapsRecenter" title="Đưa tâm camera về đầu xe của bạn">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1e293b" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+      </button>
+      <button type="button" class="gmaps-circle-fab" id="btnGmapsOverview" title="Xem toàn cảnh lộ trình / Quay lại góc nhìn lái xe">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1e293b" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+      </button>
+    </div>
+
+    <!-- Bottom White Google Maps ETA Sheet Bar -->
+    <div class="gmaps-bottom-bar">
+      <button type="button" class="gmaps-btn-exit" id="btnExitNavMode" title="Thoát chế độ dẫn đường">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+
+      <div class="gmaps-bottom-center" id="btnGmapsBottomCenter">
+        <div class="gmaps-bottom-grabber"></div>
+        <div class="gmaps-eta-duration" id="gmapsBottomDuration">-- phút</div>
+        <div class="gmaps-eta-sub" id="navArrivalClock">-- km • --:--</div>
+      </div>
+
+      <button type="button" class="gmaps-btn-sparkle" id="btnGmapsStepsBtn" title="Xem danh sách các ngã rẽ">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="#1a73e8" stroke="none"><path d="M12 2L14.8 9.2L22 12L14.8 14.8L12 22L9.2 14.8L2 12L9.2 9.2L12 2Z"/></svg>
+      </button>
     </div>
   </div>
 
@@ -524,6 +558,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/js/app.js?v=2.4"></script>
+  <script src="/js/app.js?v=2.5"></script>
 </body>
 </html>

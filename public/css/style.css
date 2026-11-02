@@ -1804,30 +1804,69 @@ body.sheet-expanded .map-fab-pod {
   font-weight: 800;
 }
 
-/* ==================== GOOGLE MAPS TURN-BY-TURN NAVIGATION HUD ==================== */
-.gmaps-nav-banner {
-  background: linear-gradient(135deg, #065f46 0%, #047857 55%, #0f766e 100%);
-  border-radius: 14px;
-  padding: 10px 11px;
-  margin-bottom: 9px;
-  border: 1px solid rgba(110, 231, 183, 0.35);
-  box-shadow: 0 8px 20px -4px rgba(4, 120, 87, 0.55);
-  color: #ffffff;
-  animation: hudSlideIn 0.2s ease-out;
+/* ==================== FULL-SCREEN GOOGLE MAPS DRIVING NAVIGATION MODE ==================== */
+body.gmaps-driving-mode .top-bar,
+body.gmaps-driving-mode .follow-hud,
+body.gmaps-driving-mode .bottom-sheet,
+body.gmaps-driving-mode .map-fab-pod,
+body.gmaps-driving-mode .quick-ping-pod {
+  display: none !important;
 }
 
-.gmaps-nav-main {
+/* 3D Perspective Tilt & Heading-Up Map Rotation when "Bắt đầu" is active */
+#map {
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: 50% 64%;
+}
+
+body.gmaps-driving-mode.gmaps-3d-tilt #map {
+  transform: perspective(900px) rotateX(36deg) rotate(var(--map-heading-deg, 0deg)) scale(1.48);
+}
+
+/* Keep vehicle marker labels upright when the map rotates in Heading-Up mode */
+body.gmaps-driving-mode.gmaps-3d-tilt .vehicle-marker-wrapper,
+body.gmaps-driving-mode.gmaps-3d-tilt .wp-map-marker {
+  transform: rotate(calc(-1 * var(--map-heading-deg, 0deg)));
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.gmaps-driving-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  pointer-events: none;
+}
+
+.gmaps-driving-overlay > * {
+  pointer-events: auto;
+}
+
+/* 1. Top Deep Teal-Green Banner (Exact Google Maps Navigation Look) */
+.gmaps-top-card {
+  position: fixed;
+  top: calc(10px + var(--safe-top));
+  left: 10px;
+  right: 10px;
+  max-width: 540px;
+  margin: 0 auto;
+  background: #065f5b;
+  border-radius: 22px;
+  padding: 16px 20px;
+  color: #ffffff;
+  box-shadow: 0 10px 28px rgba(0, 45, 42, 0.42);
+  cursor: pointer;
+  animation: hudSlideIn 0.22s ease-out;
+}
+
+.gmaps-top-main {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 18px;
 }
 
-.gmaps-maneuver-box {
+.gmaps-turn-arrow {
   width: 48px;
   height: 48px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1835,124 +1874,64 @@ body.sheet-expanded .map-fab-pod {
   color: #ffffff;
 }
 
-.gmaps-nav-info {
+.gmaps-turn-texts {
   flex: 1;
   min-width: 0;
-  cursor: pointer;
 }
 
-.gmaps-nav-dist-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  line-height: 1.1;
+.gmaps-turn-dist {
+  font-size: 23px;
+  font-weight: 600;
+  color: #f0fdfa;
+  line-height: 1.15;
+  letter-spacing: -0.2px;
 }
 
-.gmaps-nav-distance {
-  font-family: var(--font-mono);
-  font-size: 20px;
+.gmaps-turn-title {
+  font-size: 26px;
   font-weight: 800;
   color: #ffffff;
-  letter-spacing: -0.3px;
-}
-
-.gmaps-nav-eta-pill {
-  font-size: 10.5px;
-  font-weight: 700;
-  background: rgba(0, 0, 0, 0.28);
-  color: #a7f3d0;
-  padding: 2px 7px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
-.gmaps-nav-instruction {
-  font-size: 13.5px;
-  font-weight: 800;
-  color: #ecfdf5;
-  margin-top: 3px;
-  line-height: 1.25;
+  line-height: 1.2;
+  margin-top: 2px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.gmaps-nav-actions {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-
-.btn-nav-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
+.gmaps-next-turn-pill {
+  margin-top: 10px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: #044340;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: transform 0.15s, background 0.15s;
-}
-
-.btn-nav-icon:active {
-  transform: scale(0.92);
-}
-
-.btn-nav-icon.active {
-  background: rgba(255, 255, 255, 0.26);
-  border-color: rgba(255, 255, 255, 0.5);
-}
-
-.btn-nav-icon.close-nav {
-  background: rgba(0, 0, 0, 0.26);
-}
-
-.gmaps-nav-subbar {
-  margin-top: 8px;
-  padding: 5px 9px;
-  border-radius: 9px;
-  background: rgba(6, 78, 59, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  color: #d1fae5;
-}
-
-.subbar-label {
+  gap: 7px;
+  font-size: 13px;
   font-weight: 700;
-  color: #6ee7b7;
-  flex-shrink: 0;
+  color: #ccfbf1;
+  max-width: 100%;
 }
 
-.subbar-icon {
+.next-pill-icon {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
 }
 
-.subbar-text {
-  font-weight: 700;
+.next-pill-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Expandable Step-by-Step Turn List inside Banner */
+/* Expandable Step-by-Step Turn List inside Top Banner */
 .gmaps-steps-drawer {
-  margin-top: 8px;
-  background: rgba(9, 13, 22, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 11px;
-  padding: 8px;
-  max-height: 210px;
+  margin-top: 12px;
+  background: rgba(6, 52, 50, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  padding: 10px;
+  max-height: 230px;
   display: flex;
   flex-direction: column;
 }
@@ -1961,18 +1940,18 @@ body.sheet-expanded .map-fab-pod {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 800;
-  color: #6ee7b7;
+  color: #5eead4;
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .steps-drawer-header button {
   background: transparent;
   border: none;
-  color: #cbd5e1;
-  font-size: 11px;
+  color: #e2e8f0;
+  font-size: 11.5px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -1981,32 +1960,32 @@ body.sheet-expanded .map-fab-pod {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   margin-top: 6px;
 }
 
 .step-row-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 7px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .step-row-item:hover,
 .step-row-item.current {
-  background: rgba(16, 185, 129, 0.22);
-  border: 1px solid rgba(52, 211, 153, 0.4);
+  background: rgba(20, 184, 166, 0.28);
+  border: 1px solid rgba(94, 234, 212, 0.45);
 }
 
 .step-row-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.12);
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.14);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2017,7 +1996,7 @@ body.sheet-expanded .map-fab-pod {
   flex: 1;
   min-width: 0;
   font-weight: 600;
-  color: #f1f5f9;
+  color: #f8fafc;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2025,10 +2004,145 @@ body.sheet-expanded .map-fab-pod {
 
 .step-row-dist {
   font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #5eead4;
+  flex-shrink: 0;
+}
+
+/* 2. Bottom-Left Circular Speedometer Bubble */
+.gmaps-speed-circle {
+  position: fixed;
+  left: 14px;
+  bottom: calc(108px + var(--safe-bottom));
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.22);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #0f172a;
+}
+
+.gmaps-speed-num {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.05;
+  color: #0f172a;
+}
+
+.gmaps-speed-unit {
   font-size: 11px;
   font-weight: 700;
-  color: #34d399;
+  color: #475569;
+  margin-top: 1px;
+}
+
+/* 3. Right Floating Circular Controls Stack */
+.gmaps-right-fab-stack {
+  position: fixed;
+  right: 14px;
+  bottom: calc(108px + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gmaps-circle-fab {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: none;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.gmaps-circle-fab:active {
+  transform: scale(0.92);
+}
+
+#gmapsCompassSvg {
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 4. Bottom White Google Maps ETA Sheet Bar */
+.gmaps-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #ffffff;
+  border-radius: 26px 26px 0 0;
+  padding: 10px 18px calc(14px + var(--safe-bottom));
+  box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.gmaps-btn-exit,
+.gmaps-btn-sparkle {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
   flex-shrink: 0;
+  transition: background 0.15s, transform 0.15s;
+}
+
+.gmaps-btn-exit:active,
+.gmaps-btn-sparkle:active {
+  transform: scale(0.92);
+  background: #f1f5f9;
+}
+
+.gmaps-bottom-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+}
+
+.gmaps-bottom-grabber {
+  width: 34px;
+  height: 4px;
+  border-radius: 999px;
+  background: #94a3b8;
+  margin-bottom: 5px;
+}
+
+.gmaps-eta-duration {
+  font-size: 26px;
+  font-weight: 800;
+  color: #d97706;
+  line-height: 1.1;
+}
+
+.gmaps-eta-sub {
+  font-size: 15px;
+  font-weight: 600;
+  color: #475569;
+  margin-top: 3px;
 }
 
 /* Start Navigation Button inside Follow HUD & Vehicle Cards */
@@ -2037,13 +2151,13 @@ body.sheet-expanded .map-fab-pod {
   align-items: center;
   gap: 5px;
   height: 32px;
-  padding: 0 10px;
-  border-radius: 10px;
+  padding: 0 11px;
+  border-radius: 999px;
   border: 1px solid rgba(110, 231, 183, 0.45);
   background: linear-gradient(135deg, #059669, #047857);
   color: #ffffff;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
   cursor: pointer;
@@ -2053,12 +2167,6 @@ body.sheet-expanded .map-fab-pod {
 
 .btn-start-nav:active {
   transform: scale(0.94);
-}
-
-.btn-start-nav.active {
-  background: linear-gradient(135deg, #10b981, #059669);
-  border-color: #a7f3d0;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
 }
 
 .btn-nav-car {

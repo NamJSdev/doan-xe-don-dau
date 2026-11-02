@@ -34,6 +34,7 @@
     // Follow & Google Maps Turn-by-Turn Navigation state
     followTargetId: localStorage.getItem('wc_followTargetId') || null, // vehicleId or 'wp:<waypointId>'
     navMode: localStorage.getItem('wc_navMode') === 'true',
+    nav3dTilt: true,
     cameraMode: 'target',     // 'drive' | 'target' | 'both' | 'free'
     showTrail: true,
     showRoute: true,
@@ -82,6 +83,14 @@
     navStepsDrawer: document.getElementById('navStepsDrawer'),
     btnCloseStepsDrawer: document.getElementById('btnCloseStepsDrawer'),
     navStepsList: document.getElementById('navStepsList'),
+    gmapsMySpeedVal: document.getElementById('gmapsMySpeedVal'),
+    btnGmapsCompass: document.getElementById('btnGmapsCompass'),
+    gmapsCompassSvg: document.getElementById('gmapsCompassSvg'),
+    btnGmapsRecenter: document.getElementById('btnGmapsRecenter'),
+    btnGmapsOverview: document.getElementById('btnGmapsOverview'),
+    gmapsBottomDuration: document.getElementById('gmapsBottomDuration'),
+    btnGmapsBottomCenter: document.getElementById('btnGmapsBottomCenter'),
+    btnGmapsStepsBtn: document.getElementById('btnGmapsStepsBtn'),
     btnToggleNavMode: document.getElementById('btnToggleNavMode'),
     btnToggleNavText: document.getElementById('btnToggleNavText'),
     hudSpeedBox: document.getElementById('hudSpeedBox'),
@@ -808,11 +817,12 @@
             </div>
             <div class="wp-card-actions">
               <button type="button" class="btn-wp-action primary" data-action="follow-wp" data-id="${wp.id}">
-                ${isFollowingWp && state.navMode ? 'Đang chỉ đường' : 'Chỉ đường'}
+                ${isFollowingWp ? 'Đang khóa' : 'Chỉ đường'}
               </button>
-              <a class="btn-wp-action" href="${gmapsUrl}" target="_blank" rel="noopener" style="text-decoration:none;">
-                App G.Maps
-              </a>
+              <button type="button" class="btn-nav-car ${isFollowingWp && state.navMode ? 'active' : ''}" data-action="start-wp-nav" data-id="${wp.id}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+                <span>Bắt đầu</span>
+              </button>
               <button type="button" class="btn-wp-action" data-action="delete-wp" data-id="${wp.id}" title="Xoá điểm hẹn">✕</button>
             </div>
           </div>
@@ -823,9 +833,90 @@
 
   // ==================== GOOGLE MAPS TURN-BY-TURN NAVIGATION & OSRM ROUTING ====================
   let activeNavSteps = [];
+  let activeRouteCoords = [];
   let activeRouteDurationSec = 0;
   let activeRouteDistanceMeters = 0;
   let routeArrows = [];
+  let driver3dCarMarker = null;
+  let currentRoadHeading = 0;
+
+  function get3dWhiteCarHtml() {
+    return `
+      <div class="gmaps-3d-car-icon" style="transform: translate(-50%, -50%); width:48px; height:48px; display:flex; align-items:center; justify-content:center; filter: drop-shadow(0 6px 8px rgba(15,23,42,0.42));">
+        <svg width="44" height="44" viewBox="0 0 64 64" fill="none">
+          <!-- Shadow base -->
+          <ellipse cx="32" cy="34" rx="16" ry="24" fill="rgba(15,23,42,0.22)" />
+          <!-- White 3D Car Body -->
+          <rect x="17" y="10" width="30" height="44" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" />
+          <!-- Front Hood & Bumper highlight -->
+          <path d="M19 20 C19 13, 45 13, 45 20" fill="#ffffff" />
+          <!-- Dark Panoramic Windshield -->
+          <path d="M20 22 L44 22 L41 31 L23 31 Z" fill="#1e293b" />
+          <!-- Roof -->
+          <rect x="22" y="30" width="20" height="13" rx="3" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <!-- Rear Windshield -->
+          <path d="M23 43 L41 43 L43 49 L21 49 Z" fill="#334155" />
+          <!-- Tail lights -->
+          <rect x="19" y="50" width="6" height="3" rx="1.5" fill="#ef4444" />
+          <rect x="39" y="50" width="6" height="3" rx="1.5" fill="#ef4444" />
+          <!-- Side mirrors -->
+          <rect x="13" y="23" width="4" height="6" rx="2" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" />
+          <rect x="47" y="23" width="4" height="6" rx="2" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" />
+        </svg>
+      </div>
+    `;
+  }
+
+  function updateDriver3dCarMarker(lat, lng, show) {
+    if (!show || typeof lat !== 'number' || typeof lng !== 'number') {
+      if (driver3dCarMarker) {
+        routeLayerGroup.removeLayer(driver3dCarMarker);
+        driver3dCarMarker = null;
+      }
+      return;
+    }
+    if (!driver3dCarMarker) {
+      const icon = L.divIcon({
+        className: 'gmaps-driver-car-div',
+        html: get3dWhiteCarHtml(),
+        iconSize: [0, 0],
+        iconAnchor: [0, 0]
+      });
+      driver3dCarMarker = L.marker([lat, lng], {
+        icon,
+        zIndexOffset: 2500,
+        interactive: false
+      }).addTo(routeLayerGroup);
+    } else {
+      driver3dCarMarker.setLatLng([lat, lng]);
+    }
+  }
+
+  // Offset camera center ahead of the car along its heading so the car sits in the lower portion of the screen
+  function getAheadLatLng(lat, lng, bearingDeg, metersAhead) {
+    const R = 6378137;
+    const rad = (bearingDeg * Math.PI) / 180;
+    const dLat = (metersAhead * Math.cos(rad)) / R;
+    const dLng = (metersAhead * Math.sin(rad)) / (R * Math.cos((lat * Math.PI) / 180));
+    return [lat + (dLat * 180) / Math.PI, lng + (dLng * 180) / Math.PI];
+  }
+
+  function applyMap3dHeadingTransform(headingDeg) {
+    currentRoadHeading = headingDeg || 0;
+    if (state.navMode && state.followTargetId && state.nav3dTilt && state.cameraMode === 'drive') {
+      document.body.classList.add('gmaps-3d-tilt');
+      document.body.style.setProperty('--map-heading-deg', `${-currentRoadHeading}deg`);
+      if (el.gmapsCompassSvg) {
+        el.gmapsCompassSvg.style.transform = `rotate(${-currentRoadHeading}deg)`;
+      }
+    } else {
+      document.body.classList.remove('gmaps-3d-tilt');
+      document.body.style.setProperty('--map-heading-deg', '0deg');
+      if (el.gmapsCompassSvg) {
+        el.gmapsCompassSvg.style.transform = 'rotate(0deg)';
+      }
+    }
+  }
 
   function getManeuverIconSvg(iconKey, size = 28) {
     if (iconKey === 'left') {
@@ -935,14 +1026,21 @@
   }
 
   function syncNavModeUi() {
+    const isDrivingFull = Boolean(state.navMode && state.followTargetId);
+    document.body.classList.toggle('gmaps-driving-mode', isDrivingFull);
+    if (!isDrivingFull) {
+      document.body.classList.remove('gmaps-3d-tilt');
+      document.body.style.setProperty('--map-heading-deg', '0deg');
+      updateDriver3dCarMarker(0, 0, false);
+    }
     if (el.navTurnBanner) {
-      el.navTurnBanner.classList.toggle('hidden', !state.navMode || !state.followTargetId);
+      el.navTurnBanner.classList.toggle('hidden', !isDrivingFull);
     }
     if (el.btnToggleNavMode) {
       el.btnToggleNavMode.classList.toggle('active', state.navMode);
     }
     if (el.btnToggleNavText) {
-      el.btnToggleNavText.textContent = state.navMode ? 'Đang dẫn' : 'Chỉ đường';
+      el.btnToggleNavText.textContent = state.navMode ? 'Đang dẫn' : 'Bắt đầu';
     }
   }
 
@@ -984,15 +1082,13 @@
 
     if (enableNav) {
       state.navMode = true;
+      state.nav3dTilt = true;
       state.showRoute = true;
       if (el.chkShowRoute) el.chkShowRoute.checked = true;
       localStorage.setItem('wc_navMode', 'true');
       state.cameraMode = 'drive';
-      if (typeof setSheetState === 'function') {
-        setSheetState('minimized');
-      }
     } else if (!state.navMode) {
-      state.cameraMode = 'target';
+      state.cameraMode = 'both';
     }
 
     lastRouteKey = '';
@@ -1012,23 +1108,25 @@
     localStorage.setItem('wc_navMode', nextState ? 'true' : 'false');
 
     if (nextState) {
+      state.nav3dTilt = true;
       state.showRoute = true;
       if (el.chkShowRoute) el.chkShowRoute.checked = true;
       state.cameraMode = 'drive';
-      if (typeof setSheetState === 'function') {
-        setSheetState('minimized');
-      }
       lastRouteKey = '';
-      showToast('Đã bật Chế Độ Chỉ Đường Lái Xe (Dẫn đường từng chặng rẽ)');
     } else {
       if (el.navStepsDrawer) el.navStepsDrawer.classList.add('hidden');
+      applyMap3dHeadingTransform(0);
       if (state.cameraMode === 'drive') {
-        state.cameraMode = 'target';
+        state.cameraMode = 'both';
       }
     }
 
     updateCameraModeButtons();
     syncNavModeUi();
+    if (activeRouteCoords.length >= 2) {
+      const origin = getDriverOriginCoords();
+      drawRoutePolyline(activeRouteCoords, origin ? origin.lat : null, origin ? origin.lng : null);
+    }
     updateFollowHudAndCamera(true);
     renderVehicleCardsList();
     renderWaypoints();
@@ -1040,7 +1138,7 @@
     localStorage.removeItem('wc_followTargetId');
     localStorage.setItem('wc_navMode', 'false');
     el.followHud.classList.add('hidden');
-    if (el.navTurnBanner) el.navTurnBanner.classList.add('hidden');
+    syncNavModeUi();
     clearActiveRoute();
     refreshAllTrails();
     renderVehicleCardsList();
@@ -1074,15 +1172,17 @@
       routeArrows.forEach((m) => routeLayerGroup.removeLayer(m));
       routeArrows = [];
     }
+    updateDriver3dCarMarker(0, 0, false);
     activeNavSteps = [];
+    activeRouteCoords = [];
     lastRouteKey = '';
   }
 
   function formatEtaMinutes(mins) {
-    if (mins < 60) return `~${mins} phút`;
+    if (mins < 60) return `${mins} phút`;
     const h = Math.floor(mins / 60);
     const m = mins % 60;
-    return m > 0 ? `~${h} giờ ${m} phút` : `~${h} giờ`;
+    return m > 0 ? `${h} giờ ${m} phút` : `${h} giờ`;
   }
 
   function formatArrivalClockTime(durationSec) {
@@ -1097,21 +1197,29 @@
     el.navTurnBanner.classList.remove('hidden');
 
     const directMeters = getDistanceMeters(fromLat, fromLng, targetLat, targetLng);
+    const totalDistMeters = activeRouteDistanceMeters > 0 ? activeRouteDistanceMeters : directMeters;
+    const mins = Math.max(1, Math.round((activeRouteDurationSec || directMeters / 10) / 60));
+    const clockStr = formatArrivalClockTime(activeRouteDurationSec || directMeters / 10);
+
+    if (el.gmapsBottomDuration) {
+      el.gmapsBottomDuration.textContent = formatEtaMinutes(mins);
+    }
+    if (el.navArrivalClock) {
+      el.navArrivalClock.textContent = `${formatDistance(totalDistMeters)} • ${clockStr}`;
+    }
+
     if (directMeters < 28) {
       el.navTurnDistance.textContent = `${Math.round(directMeters)} m`;
-      el.navTurnInstruction.textContent = `Đã tiếp cận ${targetTitle}`;
-      el.navManeuverIcon.innerHTML = getManeuverIconSvg('arrive', 30);
-      el.navArrivalClock.textContent = 'Đã tới nơi';
+      el.navTurnInstruction.textContent = `Đến ${targetTitle}`;
+      el.navManeuverIcon.innerHTML = getManeuverIconSvg('arrive', 42);
       if (el.navNextStepRow) el.navNextStepRow.classList.add('hidden');
       return;
     }
 
     if (!activeNavSteps || activeNavSteps.length === 0) {
-      const bearing = Math.round(computeBearing(fromLat, fromLng, targetLat, targetLng));
       el.navTurnDistance.textContent = formatDistance(directMeters);
-      el.navTurnInstruction.textContent = `Đi theo hướng chỉ đường tới ${targetTitle}`;
-      el.navManeuverIcon.innerHTML = getManeuverIconSvg('straight', 30);
-      el.navArrivalClock.textContent = `Hướng ${bearing}°`;
+      el.navTurnInstruction.textContent = `Đi tới ${targetTitle}`;
+      el.navManeuverIcon.innerHTML = getManeuverIconSvg('straight', 42);
       if (el.navNextStepRow) el.navNextStepRow.classList.add('hidden');
       return;
     }
@@ -1119,11 +1227,9 @@
     // Find the best upcoming maneuver step based on driver's current position
     let stepIdx = 0;
     if (activeNavSteps.length > 1) {
-      // Skip initial 'depart' step if there is an actual upcoming turn ahead
       if (activeNavSteps[0].type === 'depart' && activeNavSteps.length >= 2) {
         stepIdx = 1;
       }
-      // If we already passed very close (< 25m) to step[stepIdx] and are closer to step[stepIdx + 1], advance
       for (let i = stepIdx; i < activeNavSteps.length - 1; i++) {
         const dCurr = getDistanceMeters(fromLat, fromLng, activeNavSteps[i].lat, activeNavSteps[i].lng);
         if (dCurr < 25) {
@@ -1140,17 +1246,13 @@
 
     el.navTurnDistance.textContent = displayDist;
     el.navTurnInstruction.textContent = currentStep.instruction;
-    el.navManeuverIcon.innerHTML = getManeuverIconSvg(currentStep.iconKey, 30);
-
-    const mins = Math.max(1, Math.round(activeRouteDurationSec / 60));
-    const clockStr = formatArrivalClockTime(activeRouteDurationSec);
-    el.navArrivalClock.textContent = `${formatEtaMinutes(mins)} • Đến ${clockStr}`;
+    el.navManeuverIcon.innerHTML = getManeuverIconSvg(currentStep.iconKey, 42);
 
     // Populate "Sau đó" (Next turn after current turn)
     const followingStep = activeNavSteps[stepIdx + 1];
     if (followingStep && el.navNextStepRow) {
       el.navNextStepRow.classList.remove('hidden');
-      el.navNextStepIcon.innerHTML = getManeuverIconSvg(followingStep.iconKey, 15);
+      el.navNextStepIcon.innerHTML = getManeuverIconSvg(followingStep.iconKey, 16);
       el.navNextStepText.textContent = `${followingStep.instruction} (${formatDistance(followingStep.distance)})`;
     } else if (el.navNextStepRow) {
       el.navNextStepRow.classList.add('hidden');
@@ -1164,7 +1266,7 @@
           const d = idx === 0 ? distToTurn : st.distance;
           return `
             <div class="step-row-item ${idx === 0 ? 'current' : ''}" data-lat="${st.lat}" data-lng="${st.lng}">
-              <div class="step-row-icon">${getManeuverIconSvg(st.iconKey, 15)}</div>
+              <div class="step-row-icon">${getManeuverIconSvg(st.iconKey, 16)}</div>
               <div class="step-row-text">${escapeHtml(st.instruction)}</div>
               <div class="step-row-dist">${formatDistance(d)}</div>
             </div>
@@ -1191,9 +1293,12 @@
       return;
     }
 
-    // Even before fetching a fresh OSRM route, update live distance countdown on existing steps
+    // Even before fetching a fresh OSRM route, update live distance countdown & trim route ahead of car
     if (state.navMode && activeNavSteps.length > 0) {
       renderTurnByTurnBanner(fromLat, fromLng, toLat, toLng, targetTitle);
+      if (activeRouteCoords.length >= 2) {
+        drawRoutePolyline(activeRouteCoords, fromLat, fromLng);
+      }
     }
 
     // Distance-adaptive OSRM routing throttle
@@ -1245,13 +1350,14 @@
           };
         });
 
-        drawRoutePolyline(coords);
+        activeRouteCoords = coords;
+        drawRoutePolyline(coords, fromLat, fromLng);
 
         const distText = formatDistance(route.distance);
         const mins = Math.max(1, Math.round(route.duration / 60));
         const clockStr = formatArrivalClockTime(route.duration);
         el.followDistanceText.textContent = `Cách bạn: ${distText}`;
-        el.followEtaText.textContent = `Lộ trình: ${formatEtaMinutes(mins)} (Đến ~${clockStr})`;
+        el.followEtaText.textContent = `Lộ trình: ~${formatEtaMinutes(mins)} (Đến ~${clockStr})`;
 
         if (state.navMode) {
           renderTurnByTurnBanner(fromLat, fromLng, toLat, toLng, targetTitle);
@@ -1259,7 +1365,8 @@
         return;
       }
     } catch (e) {
-      drawRoutePolyline([[fromLat, fromLng], [toLat, toLng]]);
+      activeRouteCoords = [[fromLat, fromLng], [toLat, toLng]];
+      drawRoutePolyline(activeRouteCoords, fromLat, fromLng);
       el.followDistanceText.textContent = `Khoảng cách: ${formatDistance(directMeters)}`;
       el.followEtaText.textContent = 'Đường thẳng trực tiếp';
       if (state.navMode) {
@@ -1268,7 +1375,7 @@
     }
   }
 
-  function drawRoutePolyline(latlngs) {
+  function drawRoutePolyline(latlngs, originLat = null, originLng = null) {
     if (activeRouteCasing) routeLayerGroup.removeLayer(activeRouteCasing);
     if (activeRouteLine) routeLayerGroup.removeLayer(activeRouteLine);
     if (routeArrows.length > 0) {
@@ -1277,34 +1384,49 @@
     }
 
     const isNav = state.navMode;
+    let displayPts = latlngs;
 
-    activeRouteCasing = L.polyline(latlngs, {
-      color: isNav ? '#1e3a8a' : '#090d16',
-      weight: isNav ? 10 : 8,
-      opacity: isNav ? 0.88 : 0.65,
+    // In Google Maps Driving Mode, trim route segments behind the car so the blue line starts right from the car!
+    if (isNav && typeof originLat === 'number' && typeof originLng === 'number' && latlngs.length >= 2) {
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < latlngs.length; i++) {
+        const d = getDistanceMeters(originLat, originLng, latlngs[i][0], latlngs[i][1]);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIdx = i;
+        }
+      }
+      displayPts = [[originLat, originLng], ...latlngs.slice(Math.min(bestIdx + 1, latlngs.length - 1))];
+    }
+
+    activeRouteCasing = L.polyline(displayPts, {
+      color: isNav ? '#1e1b4b' : '#090d16',
+      weight: isNav ? 12 : 8,
+      opacity: isNav ? 0.95 : 0.65,
       lineCap: 'round',
       lineJoin: 'round'
     }).addTo(routeLayerGroup);
 
-    activeRouteLine = L.polyline(latlngs, {
-      color: isNav ? '#3b82f6' : '#22d3ee',
-      weight: isNav ? 6 : 5,
+    activeRouteLine = L.polyline(displayPts, {
+      color: isNav ? '#3b1eff' : '#22d3ee',
+      weight: isNav ? 8 : 5,
       dashArray: isNav ? null : '10, 10',
-      opacity: 0.98,
+      opacity: 1,
       lineCap: 'round',
       lineJoin: 'round'
     }).addTo(routeLayerGroup);
 
-    // Add Google Maps style directional chevrons along the navigation route
-    if (isNav && latlngs.length >= 2) {
-      const step = Math.max(3, Math.ceil(latlngs.length / 14));
-      for (let i = 1; i < latlngs.length; i += step) {
-        const p1 = latlngs[i - 1];
-        const p2 = latlngs[i];
+    // Add Google Maps style white turn chevron arrows along the route
+    if (isNav && displayPts.length >= 2) {
+      const step = Math.max(3, Math.ceil(displayPts.length / 10));
+      for (let i = 1; i < displayPts.length; i += step) {
+        const p1 = displayPts[i - 1];
+        const p2 = displayPts[i];
         const angle = computeBearing(p1[0], p1[1], p2[0], p2[1]);
         const arrowIcon = L.divIcon({
           className: 'trail-arrow-icon',
-          html: `<div style="transform: translate(-50%, -50%) rotate(${angle}deg); color:#ffffff; font-size:11px; font-weight:900; text-shadow: 0 0 3px #1d4ed8, 0 0 3px #1d4ed8;">▲</div>`,
+          html: `<div style="transform: translate(-50%, -50%) rotate(${angle}deg); color:#ffffff; font-size:12px; font-weight:900; text-shadow: 0 0 3px #1e1b4b;">▲</div>`,
           iconSize: [0, 0]
         });
         const m = L.marker([p2[0], p2[1]], { icon: arrowIcon, interactive: false }).addTo(routeLayerGroup);
@@ -1360,6 +1482,11 @@
 
     const origin = getDriverOriginCoords();
     if (origin) {
+      if (el.gmapsMySpeedVal) {
+        el.gmapsMySpeedVal.textContent = origin.speed && origin.speed > 0 ? `${origin.speed}` : '--';
+      }
+      updateDriver3dCarMarker(origin.lat, origin.lng, state.navMode);
+
       const directDist = getDistanceMeters(origin.lat, origin.lng, targetLat, targetLng);
       if (!state.showRoute && !state.navMode) {
         el.followDistanceText.textContent = `Cách bạn: ${formatDistance(directDist)}`;
@@ -1368,23 +1495,47 @@
         updateDrivingRoute(origin.lat, origin.lng, targetLat, targetLng, targetTitle);
       }
     } else {
+      if (el.gmapsMySpeedVal) el.gmapsMySpeedVal.textContent = '--';
+      updateDriver3dCarMarker(targetLat, targetLng, state.navMode);
       clearActiveRoute();
       el.followDistanceText.textContent = 'Chế độ quan sát';
       el.followEtaText.textContent = targetStatus ? `"${targetStatus}"` : 'Hãy cấp quyền GPS hoặc bật Chạy Thử để dẫn đường';
       if (state.navMode && el.navTurnBanner) {
         el.navTurnBanner.classList.remove('hidden');
         el.navTurnDistance.textContent = 'GPS...';
-        el.navTurnInstruction.textContent = `Đang lấy vị trí xe bạn để chỉ đường tới ${targetTitle}`;
-        el.navArrivalClock.textContent = 'Đợi tín hiệu GPS';
+        el.navTurnInstruction.textContent = `Tới ${targetTitle}`;
+        if (el.gmapsBottomDuration) el.gmapsBottomDuration.textContent = '-- phút';
+        el.navArrivalClock.textContent = 'Đang đợi GPS xe bạn';
       }
     }
 
+    // Calculate road-ahead heading for 3D Heading-Up Driving Mode
+    let roadBearing = origin ? origin.heading : 0;
+    if (origin && activeRouteCoords.length >= 2) {
+      for (let i = 0; i < activeRouteCoords.length; i++) {
+        const d = getDistanceMeters(origin.lat, origin.lng, activeRouteCoords[i][0], activeRouteCoords[i][1]);
+        if (d >= 18 && d <= 180) {
+          roadBearing = Math.round(computeBearing(origin.lat, origin.lng, activeRouteCoords[i][0], activeRouteCoords[i][1]));
+          break;
+        }
+      }
+    }
+    if (!roadBearing && origin) {
+      roadBearing = Math.round(computeBearing(origin.lat, origin.lng, targetLat, targetLng));
+    }
+
+    applyMap3dHeadingTransform(roadBearing);
+
     if (state.cameraMode === 'drive') {
-      const camPt = origin ? [origin.lat, origin.lng] : [targetLat, targetLng];
-      if (forceCamera && map.getZoom() < 17) {
-        map.setView(camPt, 17, { animate: true });
+      const basePt = origin ? [origin.lat, origin.lng] : [targetLat, targetLng];
+      // Look 65m ahead along the road so the 3D White Car sits near the bottom of the screen like Google Maps!
+      const camPt = state.navMode && state.nav3dTilt
+        ? getAheadLatLng(basePt[0], basePt[1], roadBearing, 65)
+        : basePt;
+      if (forceCamera || map.getZoom() < 18) {
+        map.setView(camPt, 18, { animate: true });
       } else {
-        map.panTo(camPt, { animate: true, duration: 0.55 });
+        map.panTo(camPt, { animate: true, duration: 0.5 });
       }
     } else if (state.cameraMode === 'target') {
       map.panTo([targetLat, targetLng], { animate: true, duration: 0.6 });
@@ -1494,12 +1645,12 @@
                   isMe
                     ? `<button type="button" class="btn-follow-car" data-action="center-me">Định tâm xe tôi</button>`
                     : `
-                      <button type="button" class="btn-nav-car ${isFollowing && state.navMode ? 'active' : ''}" data-action="nav-car" data-id="${v.id}" title="Bật chỉ đường lái xe tới xe này">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
-                        <span>${isFollowing && state.navMode ? 'Đang chỉ đường' : 'Chỉ đường'}</span>
-                      </button>
                       <button type="button" class="btn-follow-car ${isFollowing && !state.navMode ? 'active' : ''}" data-action="follow-car" data-id="${v.id}">
-                        ${isFollowing ? 'Đang bám' : 'Bám xe'}
+                        ${isFollowing ? 'Đang khóa' : 'Chỉ đường'}
+                      </button>
+                      <button type="button" class="btn-nav-car ${isFollowing && state.navMode ? 'active' : ''}" data-action="nav-car" data-id="${v.id}" title="Bắt đầu dẫn đường lái xe kiểu Google Maps">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+                        <span>Bắt đầu</span>
                       </button>
                     `
                 }
@@ -2135,13 +2286,65 @@
   }
 
   if (el.btnToggleNavSteps && el.navStepsDrawer) {
-    el.btnToggleNavSteps.addEventListener('click', () => {
+    el.btnToggleNavSteps.addEventListener('click', (e) => {
+      if (e.target.closest('#btnCloseStepsDrawer') || e.target.closest('.step-row-item')) return;
       el.navStepsDrawer.classList.toggle('hidden');
     });
   }
 
+  if (el.btnGmapsStepsBtn && el.navStepsDrawer) {
+    el.btnGmapsStepsBtn.addEventListener('click', () => {
+      el.navStepsDrawer.classList.toggle('hidden');
+    });
+  }
+
+  if (el.btnGmapsBottomCenter && el.navStepsDrawer) {
+    el.btnGmapsBottomCenter.addEventListener('click', () => {
+      el.navStepsDrawer.classList.toggle('hidden');
+    });
+  }
+
+  if (el.btnGmapsCompass) {
+    el.btnGmapsCompass.addEventListener('click', () => {
+      state.nav3dTilt = !state.nav3dTilt;
+      if (state.nav3dTilt) {
+        state.cameraMode = 'drive';
+        showToast('Góc nhìn 3D xoay theo hướng xe chạy');
+      } else {
+        showToast('Góc nhìn 2D cố định hướng Bắc');
+      }
+      updateFollowHudAndCamera(true);
+    });
+  }
+
+  if (el.btnGmapsRecenter) {
+    el.btnGmapsRecenter.addEventListener('click', () => {
+      state.nav3dTilt = true;
+      state.cameraMode = 'drive';
+      updateCameraModeButtons();
+      updateFollowHudAndCamera(true);
+    });
+  }
+
+  if (el.btnGmapsOverview) {
+    el.btnGmapsOverview.addEventListener('click', () => {
+      if (state.cameraMode === 'both') {
+        state.nav3dTilt = true;
+        state.cameraMode = 'drive';
+        showToast('Đã quay lại góc nhìn buồng lái 3D');
+      } else {
+        state.nav3dTilt = false;
+        state.cameraMode = 'both';
+        showToast('Đang xem toàn cảnh lộ trình');
+      }
+      updateCameraModeButtons();
+      updateFollowHudAndCamera(true);
+    });
+  }
+
   if (el.btnCloseStepsDrawer && el.navStepsDrawer) {
-    el.btnCloseStepsDrawer.addEventListener('click', () => {
+    el.btnCloseStepsDrawer.addEventListener('click', (e) => {
+      e.stopPropagation();
       el.navStepsDrawer.classList.add('hidden');
     });
   }
@@ -2386,14 +2589,24 @@
   });
 
   el.waypointListContainer.addEventListener('click', (e) => {
+    const startWpNavBtn = e.target.closest('[data-action="start-wp-nav"]');
+    if (startWpNavBtn) {
+      const wpId = startWpNavBtn.dataset.id;
+      const targetKey = `wp:${wpId}`;
+      startFollowing(targetKey, { enableNav: true });
+      return;
+    }
+
     const followWpBtn = e.target.closest('[data-action="follow-wp"]');
     if (followWpBtn) {
       const wpId = followWpBtn.dataset.id;
       const targetKey = `wp:${wpId}`;
-      if (state.followTargetId === targetKey && state.navMode) {
+      if (state.followTargetId === targetKey && !state.navMode) {
         stopFollowing();
       } else {
-        startFollowing(targetKey, { enableNav: true });
+        state.navMode = false;
+        localStorage.setItem('wc_navMode', 'false');
+        startFollowing(targetKey, { enableNav: false });
       }
       return;
     }
