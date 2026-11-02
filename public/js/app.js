@@ -34,7 +34,7 @@
     // Follow & Google Maps Turn-by-Turn Navigation state
     followTargetId: localStorage.getItem('wc_followTargetId') || null, // vehicleId or 'wp:<waypointId>'
     navMode: localStorage.getItem('wc_navMode') === 'true',
-    nav3dTilt: true,
+    nav3dTilt: false,
     cameraMode: 'target',     // 'drive' | 'target' | 'both' | 'free'
     showTrail: true,
     showRoute: true,
@@ -84,6 +84,9 @@
     btnCloseStepsDrawer: document.getElementById('btnCloseStepsDrawer'),
     navStepsList: document.getElementById('navStepsList'),
     gmapsMySpeedVal: document.getElementById('gmapsMySpeedVal'),
+    gmapsConvoyMiniPill: document.getElementById('gmapsConvoyMiniPill'),
+    gmapsConvoyMiniText: document.getElementById('gmapsConvoyMiniText'),
+    btnGmapsRecenterPill: document.getElementById('btnGmapsRecenterPill'),
     btnGmapsCompass: document.getElementById('btnGmapsCompass'),
     gmapsCompassSvg: document.getElementById('gmapsCompassSvg'),
     btnGmapsRecenter: document.getElementById('btnGmapsRecenter'),
@@ -237,6 +240,7 @@
 
   map.on('dragstart', () => {
     if (state.followTargetId && state.cameraMode !== 'free') {
+      state.nav3dTilt = false;
       setCameraMode('free');
     }
   });
@@ -840,34 +844,100 @@
   let driver3dCarMarker = null;
   let currentRoadHeading = 0;
 
-  function get3dWhiteCarHtml() {
+  function get3dWhiteCarHtml(headingDeg = 0) {
+    const smoothDeg = getSmoothRotation('driver3d', headingDeg);
     return `
-      <div class="gmaps-3d-car-icon" style="transform: translate(-50%, -50%); width:48px; height:48px; display:flex; align-items:center; justify-content:center; filter: drop-shadow(0 6px 8px rgba(15,23,42,0.42));">
-        <svg width="44" height="44" viewBox="0 0 64 64" fill="none">
-          <!-- Shadow base -->
-          <ellipse cx="32" cy="34" rx="16" ry="24" fill="rgba(15,23,42,0.22)" />
-          <!-- White 3D Car Body -->
-          <rect x="17" y="10" width="30" height="44" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" />
-          <!-- Front Hood & Bumper highlight -->
-          <path d="M19 20 C19 13, 45 13, 45 20" fill="#ffffff" />
-          <!-- Dark Panoramic Windshield -->
-          <path d="M20 22 L44 22 L41 31 L23 31 Z" fill="#1e293b" />
-          <!-- Roof -->
-          <rect x="22" y="30" width="20" height="13" rx="3" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
-          <!-- Rear Windshield -->
-          <path d="M23 43 L41 43 L43 49 L21 49 Z" fill="#334155" />
-          <!-- Tail lights -->
-          <rect x="19" y="50" width="6" height="3" rx="1.5" fill="#ef4444" />
-          <rect x="39" y="50" width="6" height="3" rx="1.5" fill="#ef4444" />
-          <!-- Side mirrors -->
-          <rect x="13" y="23" width="4" height="6" rx="2" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" />
-          <rect x="47" y="23" width="4" height="6" rx="2" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" />
-        </svg>
+      <div class="gmaps-3d-car-icon" style="transform: translate(-50%, -50%); width:52px; height:52px; display:flex; align-items:center; justify-content:center; filter: drop-shadow(0 6px 10px rgba(15,23,42,0.45));">
+        <div class="gmaps-3d-car-rotator" style="transform: rotate(${smoothDeg}deg); width:46px; height:46px; display:flex; align-items:center; justify-content:center;">
+          <svg width="46" height="46" viewBox="0 0 64 64" fill="none">
+            <!-- Soft navigation halo -->
+            <circle cx="32" cy="32" r="24" fill="rgba(59, 130, 246, 0.18)" stroke="rgba(255, 255, 255, 0.7)" stroke-width="1.5" />
+            <!-- Shadow base -->
+            <ellipse cx="32" cy="34" rx="15" ry="22" fill="rgba(15,23,42,0.25)" />
+            <!-- White 3D Car Body -->
+            <rect x="18" y="10" width="28" height="44" rx="11" fill="#ffffff" stroke="#cbd5e1" stroke-width="2" />
+            <!-- Front Hood & Headlight beams -->
+            <path d="M20 20 C20 13, 44 13, 44 20" fill="#f8fafc" />
+            <!-- Dark Panoramic Windshield -->
+            <path d="M21 22 L43 22 L40 31 L24 31 Z" fill="#0f172a" />
+            <!-- Roof -->
+            <rect x="23" y="30" width="18" height="13" rx="3" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+            <!-- Rear Windshield -->
+            <path d="M24 43 L40 43 L42 49 L22 49 Z" fill="#334155" />
+            <!-- Tail lights -->
+            <rect x="20" y="50" width="6" height="3" rx="1.5" fill="#ef4444" />
+            <rect x="38" y="50" width="6" height="3" rx="1.5" fill="#ef4444" />
+          </svg>
+        </div>
       </div>
     `;
   }
 
-  function updateDriver3dCarMarker(lat, lng, show) {
+  // Project driver GPS onto the active OSRM route line for road-snapped navigation
+  function snapPointToRoute(lat, lng, coords) {
+    if (!Array.isArray(coords) || coords.length < 2) {
+      return { lat, lng, bearing: null, forwardCoords: coords || [] };
+    }
+    let bestDist = Infinity;
+    let bestLat = lat;
+    let bestLng = lng;
+    let bestSegIdx = 0;
+    let bestBearing = null;
+
+    const cosLat = Math.cos((lat * Math.PI) / 180);
+
+    for (let i = 0; i < coords.length - 1; i++) {
+      const aLat = coords[i][0];
+      const aLng = coords[i][1];
+      const bLat = coords[i + 1][0];
+      const bLng = coords[i + 1][1];
+
+      const dx = (bLng - aLng) * cosLat;
+      const dy = bLat - aLat;
+      const lenSq = dx * dx + dy * dy;
+
+      let t = 0;
+      if (lenSq > 1e-12) {
+        const px = (lng - aLng) * cosLat;
+        const py = lat - aLat;
+        t = Math.max(0, Math.min(1, (px * dx + py * dy) / lenSq));
+      }
+
+      const projLat = aLat + t * (bLat - aLat);
+      const projLng = aLng + t * (bLng - aLng);
+      const d = getDistanceMeters(lat, lng, projLat, projLng);
+
+      if (d < bestDist) {
+        bestDist = d;
+        bestLat = projLat;
+        bestLng = projLng;
+        bestSegIdx = i;
+        if (getDistanceMeters(aLat, aLng, bLat, bLng) > 2) {
+          bestBearing = computeBearing(aLat, aLng, bLat, bLng);
+        }
+      }
+    }
+
+    // Only snap onto road if car is within 45 meters of the route
+    if (bestDist <= 45) {
+      const forwardCoords = [[bestLat, bestLng], ...coords.slice(bestSegIdx + 1)];
+      return {
+        lat: bestLat,
+        lng: bestLng,
+        bearing: bestBearing,
+        forwardCoords
+      };
+    }
+
+    return {
+      lat,
+      lng,
+      bearing: null,
+      forwardCoords: [[lat, lng], ...coords]
+    };
+  }
+
+  function updateDriver3dCarMarker(lat, lng, headingDeg, show) {
     if (!show || typeof lat !== 'number' || typeof lng !== 'number') {
       if (driver3dCarMarker) {
         routeLayerGroup.removeLayer(driver3dCarMarker);
@@ -878,7 +948,7 @@
     if (!driver3dCarMarker) {
       const icon = L.divIcon({
         className: 'gmaps-driver-car-div',
-        html: get3dWhiteCarHtml(),
+        html: get3dWhiteCarHtml(headingDeg || 0),
         iconSize: [0, 0],
         iconAnchor: [0, 0]
       });
@@ -888,7 +958,15 @@
         interactive: false
       }).addTo(routeLayerGroup);
     } else {
-      driver3dCarMarker.setLatLng([lat, lng]);
+      animateMarkerPosition('driver3d', driver3dCarMarker, lat, lng);
+      const domEl = driver3dCarMarker.getElement();
+      if (domEl) {
+        const rotator = domEl.querySelector('.gmaps-3d-car-rotator');
+        if (rotator && typeof headingDeg === 'number') {
+          const smoothDeg = getSmoothRotation('driver3d', headingDeg);
+          rotator.style.transform = `rotate(${smoothDeg}deg)`;
+        }
+      }
     }
   }
 
@@ -903,15 +981,17 @@
 
   function applyMap3dHeadingTransform(headingDeg) {
     currentRoadHeading = headingDeg || 0;
-    if (state.navMode && state.followTargetId && state.nav3dTilt && state.cameraMode === 'drive') {
+    const isDrivingFull = Boolean(state.navMode && state.followTargetId);
+    if (el.btnGmapsRecenterPill) {
+      el.btnGmapsRecenterPill.classList.toggle('hidden', !isDrivingFull || state.cameraMode === 'drive');
+    }
+    if (isDrivingFull && state.nav3dTilt && state.cameraMode === 'drive') {
       document.body.classList.add('gmaps-3d-tilt');
-      document.body.style.setProperty('--map-heading-deg', `${-currentRoadHeading}deg`);
       if (el.gmapsCompassSvg) {
-        el.gmapsCompassSvg.style.transform = `rotate(${-currentRoadHeading}deg)`;
+        el.gmapsCompassSvg.style.transform = 'rotate(-28deg) scale(1.08)';
       }
     } else {
       document.body.classList.remove('gmaps-3d-tilt');
-      document.body.style.setProperty('--map-heading-deg', '0deg');
       if (el.gmapsCompassSvg) {
         el.gmapsCompassSvg.style.transform = 'rotate(0deg)';
       }
@@ -1030,8 +1110,7 @@
     document.body.classList.toggle('gmaps-driving-mode', isDrivingFull);
     if (!isDrivingFull) {
       document.body.classList.remove('gmaps-3d-tilt');
-      document.body.style.setProperty('--map-heading-deg', '0deg');
-      updateDriver3dCarMarker(0, 0, false);
+      updateDriver3dCarMarker(0, 0, 0, false);
     }
     if (el.navTurnBanner) {
       el.navTurnBanner.classList.toggle('hidden', !isDrivingFull);
@@ -1082,7 +1161,6 @@
 
     if (enableNav) {
       state.navMode = true;
-      state.nav3dTilt = true;
       state.showRoute = true;
       if (el.chkShowRoute) el.chkShowRoute.checked = true;
       localStorage.setItem('wc_navMode', 'true');
@@ -1108,7 +1186,6 @@
     localStorage.setItem('wc_navMode', nextState ? 'true' : 'false');
 
     if (nextState) {
-      state.nav3dTilt = true;
       state.showRoute = true;
       if (el.chkShowRoute) el.chkShowRoute.checked = true;
       state.cameraMode = 'drive';
@@ -1172,7 +1249,7 @@
       routeArrows.forEach((m) => routeLayerGroup.removeLayer(m));
       routeArrows = [];
     }
-    updateDriver3dCarMarker(0, 0, false);
+    updateDriver3dCarMarker(0, 0, 0, false);
     activeNavSteps = [];
     activeRouteCoords = [];
     lastRouteKey = '';
@@ -1386,18 +1463,10 @@
     const isNav = state.navMode;
     let displayPts = latlngs;
 
-    // In Google Maps Driving Mode, trim route segments behind the car so the blue line starts right from the car!
+    // In Google Maps Driving Mode, snap & trim route segments behind the car so the blue line starts right from the car!
     if (isNav && typeof originLat === 'number' && typeof originLng === 'number' && latlngs.length >= 2) {
-      let bestIdx = 0;
-      let bestDist = Infinity;
-      for (let i = 0; i < latlngs.length; i++) {
-        const d = getDistanceMeters(originLat, originLng, latlngs[i][0], latlngs[i][1]);
-        if (d < bestDist) {
-          bestDist = d;
-          bestIdx = i;
-        }
-      }
-      displayPts = [[originLat, originLng], ...latlngs.slice(Math.min(bestIdx + 1, latlngs.length - 1))];
+      const snapped = snapPointToRoute(originLat, originLng, latlngs);
+      displayPts = snapped.forwardCoords.length >= 2 ? snapped.forwardCoords : latlngs;
     }
 
     activeRouteCasing = L.polyline(displayPts, {
@@ -1417,20 +1486,32 @@
       lineJoin: 'round'
     }).addTo(routeLayerGroup);
 
-    // Add Google Maps style white turn chevron arrows along the route
-    if (isNav && displayPts.length >= 2) {
-      const step = Math.max(3, Math.ceil(displayPts.length / 10));
-      for (let i = 1; i < displayPts.length; i += step) {
-        const p1 = displayPts[i - 1];
-        const p2 = displayPts[i];
-        const angle = computeBearing(p1[0], p1[1], p2[0], p2[1]);
-        const arrowIcon = L.divIcon({
-          className: 'trail-arrow-icon',
-          html: `<div style="transform: translate(-50%, -50%) rotate(${angle}deg); color:#ffffff; font-size:12px; font-weight:900; text-shadow: 0 0 3px #1e1b4b;">▲</div>`,
-          iconSize: [0, 0]
-        });
-        const m = L.marker([p2[0], p2[1]], { icon: arrowIcon, interactive: false }).addTo(routeLayerGroup);
-        routeArrows.push(m);
+    // Highlight the upcoming turn intersection with a crisp white directional arrow (Google Maps style)
+    if (isNav && displayPts.length >= 3) {
+      const turnStep = activeNavSteps.find((s) => s.type !== 'depart' && s.type !== 'arrive') || activeNavSteps[0];
+      if (turnStep && typeof turnStep.lat === 'number') {
+        // Find point on displayPts closest to turnStep
+        let turnIdx = -1;
+        let minD = Infinity;
+        for (let i = 1; i < displayPts.length - 1; i++) {
+          const d = getDistanceMeters(turnStep.lat, turnStep.lng, displayPts[i][0], displayPts[i][1]);
+          if (d < minD) {
+            minD = d;
+            turnIdx = i;
+          }
+        }
+        if (turnIdx > 0 && turnIdx < displayPts.length - 1) {
+          const pNext = displayPts[Math.min(displayPts.length - 1, turnIdx + 1)];
+          const pCurr = displayPts[turnIdx];
+          const angle = computeBearing(pCurr[0], pCurr[1], pNext[0], pNext[1]);
+          const arrowIcon = L.divIcon({
+            className: 'trail-arrow-icon',
+            html: `<div style="transform: translate(-50%, -50%) rotate(${angle}deg); color:#ffffff; font-size:15px; font-weight:900; text-shadow: 0 0 4px #1e1b4b, 0 0 4px #1e1b4b;">▲</div>`,
+            iconSize: [0, 0]
+          });
+          const m = L.marker([pCurr[0], pCurr[1]], { icon: arrowIcon, interactive: false }).addTo(routeLayerGroup);
+          routeArrows.push(m);
+        }
       }
     }
   }
@@ -1481,13 +1562,35 @@
     }
 
     const origin = getDriverOriginCoords();
+    let snappedCarLat = origin ? origin.lat : targetLat;
+    let snappedCarLng = origin ? origin.lng : targetLng;
+    let roadBearing = origin ? origin.heading : 0;
+
+    if (origin && activeRouteCoords.length >= 2) {
+      const snapped = snapPointToRoute(origin.lat, origin.lng, activeRouteCoords);
+      snappedCarLat = snapped.lat;
+      snappedCarLng = snapped.lng;
+      if (typeof snapped.bearing === 'number') {
+        roadBearing = Math.round(snapped.bearing);
+      }
+    }
+    if (!roadBearing && origin) {
+      roadBearing = Math.round(computeBearing(origin.lat, origin.lng, targetLat, targetLng));
+    }
+
     if (origin) {
       if (el.gmapsMySpeedVal) {
         el.gmapsMySpeedVal.textContent = origin.speed && origin.speed > 0 ? `${origin.speed}` : '--';
       }
-      updateDriver3dCarMarker(origin.lat, origin.lng, state.navMode);
+      updateDriver3dCarMarker(snappedCarLat, snappedCarLng, roadBearing, state.navMode);
 
       const directDist = getDistanceMeters(origin.lat, origin.lng, targetLat, targetLng);
+      if (el.gmapsConvoyMiniText) {
+        const speedInfo = targetSpeed > 0 ? ` • ${targetSpeed} km/h` : '';
+        const statusInfo = targetStatus ? ` • "${targetStatus}"` : '';
+        el.gmapsConvoyMiniText.textContent = `${targetTitle}${speedInfo} • Cách ${formatDistance(directDist)}${statusInfo}`;
+      }
+
       if (!state.showRoute && !state.navMode) {
         el.followDistanceText.textContent = `Cách bạn: ${formatDistance(directDist)}`;
         el.followEtaText.textContent = targetStatus ? `"${targetStatus}"` : 'Đang vẽ vệt lộ trình xe trước';
@@ -1496,7 +1599,10 @@
       }
     } else {
       if (el.gmapsMySpeedVal) el.gmapsMySpeedVal.textContent = '--';
-      updateDriver3dCarMarker(targetLat, targetLng, state.navMode);
+      updateDriver3dCarMarker(targetLat, targetLng, roadBearing, state.navMode);
+      if (el.gmapsConvoyMiniText) {
+        el.gmapsConvoyMiniText.textContent = `${targetTitle} • Chế độ quan sát`;
+      }
       clearActiveRoute();
       el.followDistanceText.textContent = 'Chế độ quan sát';
       el.followEtaText.textContent = targetStatus ? `"${targetStatus}"` : 'Hãy cấp quyền GPS hoặc bật Chạy Thử để dẫn đường';
@@ -1509,33 +1615,18 @@
       }
     }
 
-    // Calculate road-ahead heading for 3D Heading-Up Driving Mode
-    let roadBearing = origin ? origin.heading : 0;
-    if (origin && activeRouteCoords.length >= 2) {
-      for (let i = 0; i < activeRouteCoords.length; i++) {
-        const d = getDistanceMeters(origin.lat, origin.lng, activeRouteCoords[i][0], activeRouteCoords[i][1]);
-        if (d >= 18 && d <= 180) {
-          roadBearing = Math.round(computeBearing(origin.lat, origin.lng, activeRouteCoords[i][0], activeRouteCoords[i][1]));
-          break;
-        }
-      }
-    }
-    if (!roadBearing && origin) {
-      roadBearing = Math.round(computeBearing(origin.lat, origin.lng, targetLat, targetLng));
-    }
-
     applyMap3dHeadingTransform(roadBearing);
 
     if (state.cameraMode === 'drive') {
-      const basePt = origin ? [origin.lat, origin.lng] : [targetLat, targetLng];
-      // Look 65m ahead along the road so the 3D White Car sits near the bottom of the screen like Google Maps!
-      const camPt = state.navMode && state.nav3dTilt
-        ? getAheadLatLng(basePt[0], basePt[1], roadBearing, 65)
+      const basePt = [snappedCarLat, snappedCarLng];
+      // Look 45m ahead along the road so the 3D White Car sits comfortably in the lower portion of the screen
+      const camPt = state.navMode
+        ? getAheadLatLng(basePt[0], basePt[1], roadBearing, 45)
         : basePt;
-      if (forceCamera || map.getZoom() < 18) {
+      if (forceCamera || map.getZoom() < 17) {
         map.setView(camPt, 18, { animate: true });
       } else {
-        map.panTo(camPt, { animate: true, duration: 0.5 });
+        map.panTo(camPt, { animate: true, duration: 0.45 });
       }
     } else if (state.cameraMode === 'target') {
       map.panTo([targetLat, targetLng], { animate: true, duration: 0.6 });
@@ -2319,7 +2410,14 @@
 
   if (el.btnGmapsRecenter) {
     el.btnGmapsRecenter.addEventListener('click', () => {
-      state.nav3dTilt = true;
+      state.cameraMode = 'drive';
+      updateCameraModeButtons();
+      updateFollowHudAndCamera(true);
+    });
+  }
+
+  if (el.btnGmapsRecenterPill) {
+    el.btnGmapsRecenterPill.addEventListener('click', () => {
       state.cameraMode = 'drive';
       updateCameraModeButtons();
       updateFollowHudAndCamera(true);

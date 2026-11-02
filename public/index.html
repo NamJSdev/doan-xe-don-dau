@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=2.5" />
+  <link rel="stylesheet" href="/css/style.css?v=2.6" />
 </head>
 <body>
   <!-- Main Google Map Container -->
@@ -183,6 +183,18 @@
         <div class="steps-drawer-list" id="navStepsList"></div>
       </div>
     </div>
+
+    <!-- Live Convoy Target Status Strip right below Top Turn Banner -->
+    <div class="gmaps-convoy-mini-pill" id="gmapsConvoyMiniPill">
+      <span class="convoy-mini-dot"></span>
+      <span class="convoy-mini-text" id="gmapsConvoyMiniText">Đang bám Xe Hoa Dẫn Đoàn</span>
+    </div>
+
+    <!-- Google Maps "Về giữa" (Re-center) Button when user pans map during navigation -->
+    <button type="button" class="gmaps-recenter-pill hidden" id="btnGmapsRecenterPill">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="#1a73e8" stroke="none"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+      <span>Về giữa</span>
+    </button>
 
     <!-- Bottom-Left Circular Speedometer Bubble -->
     <div class="gmaps-speed-circle" id="gmapsSpeedBubble">
@@ -558,6 +570,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/js/app.js?v=2.5"></script>
+  <script src="/js/app.js?v=2.6"></script>
 </body>
 </html>
